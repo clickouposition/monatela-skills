@@ -14,6 +14,8 @@ Read this before executing `SKILL.md`. Section 1 is a pre-flight checklist — r
 
 **1.5 — `temp/ai-cuts.json` is clean for this video.** If it exists from a previous run, delete it before `analyze` — see the "stale ai-cuts.json" row below for why this matters.
 
+**1.6 — Trello access, only when running batch/Trello-match mode.** Check whether a Trello MCP connector is available in the current environment; if not, check `.env` for real `TRELLO_API_KEY` / `TRELLO_TOKEN` values. Neither present means: stop and ask the user for one of the two before starting `reference/trello-match.md` — don't try to scrape the Trello web UI as a workaround.
+
 ## 2. Error → cause → fix
 
 | Symptom | Root cause | Fix |
@@ -28,6 +30,9 @@ Read this before executing `SKILL.md`. Section 1 is a pre-flight checklist — r
 | Gemini transcription step logs `GEMINI_API_KEY not set. Cannot transcribe.` | Expected and harmless — Gemini is an optional fallback layer, not required | No action needed; the pipeline continues on AssemblyAI alone. Only worth flagging to the user if they explicitly wanted Gemini and forgot to add the key |
 | Gemini key generation redirects to `https://ai.google.dev/gemini-api/docs/available-regions` instead of producing a key | The Gemini API isn't available in the user's region | Tell the user Gemini is optional here; leave `GEMINI_API_KEY` blank and continue with AssemblyAI-only |
 | A background `npx tsx` command silently uses a different/older `tsx` than the one in `node_modules/.bin` | `npx` fetched a fresh `tsx` from its own cache instead of the local dependency, usually right after an interrupted `npm install` | Re-run `npm install` to make sure `node_modules/.bin/tsx` exists and is current, then re-run the command |
+| A video in a Trello-match batch gets assigned to the wrong REEL/client, or to no card at all | The transcript-to-card match was forced past a weak/ambiguous score instead of stopping to ask | This is a Trello Match Confidence Rule violation, not a bug to patch around — re-run the match for that video and, per `reference/trello-match.md`, stop and ask the user instead of auto-picking the top-scoring card |
+| Trello card list comes back empty, or the wrong client's cards | Wrong board/list resolved, or the "Conteúdo" list name doesn't match exactly (accents, capitalization) on that particular board | Confirm the exact board with the user rather than guessing from a folder/filename; list the board's lists and match the name literally instead of assuming the list id from another board |
+| CapCut project won't relink its media — clip shows as offline/missing, but the project (and its cuts) already exist | `temp/normalized-<name>.mp4` was deleted (disk cleanup, moved `temp/` folder) while the CapCut draft still points at that exact path | Run `npx tsx src/renormalize.ts <original-video-path>` to regenerate the normalized file at the same path — it re-runs only the normalize step, without touching transcripts, `ai-cuts.json`, or the CapCut project itself |
 
 ## 3. When you hit something not listed here
 
