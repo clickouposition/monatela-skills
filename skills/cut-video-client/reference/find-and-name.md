@@ -1,4 +1,6 @@
-# Step 1 — Find the video(s) + script(s), decide the project name
+# Step 1 (fallback) — Find the video(s) + script(s), decide the project name
+
+Use this only when [trello-match.md](trello-match.md) — the default Step 1 — doesn't apply: the user already stated the exact script + reel number for this footage, or Trello isn't reachable at all.
 
 ## Finding the footage
 
