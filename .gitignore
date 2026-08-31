@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+dist/
+
+# Secrets
+.env
+
+# Generated artifacts (cached transcripts, normalized videos, etc.)
+temp/
+
+# Local development scratch
+test-output*/
+test_render/
+clip_ranges.txt
+
+# Optional local Whisper model (only used by legacy code, not the main pipeline)
+models/
+
+# IDE / Claude Code local settings
+.claude/
+.vscode/
+.idea/
+
+# Source video files — users add their own; never ship example videos in the repo
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
