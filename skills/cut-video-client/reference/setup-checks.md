@@ -39,4 +39,4 @@ Auto-detected by the scripts at:
 
 If the user's CapCut is installed somewhere non-standard, accept a custom path — it's passed as the 3rd argument to `build` (see [build.md](build.md)).
 
-Once all four checks pass, move to [find-and-name.md](find-and-name.md).
+Once all four checks pass, move to [trello-match.md](trello-match.md) — that's the default Step 1 now, for one video or many. Only go to [find-and-name.md](find-and-name.md) directly if the user already gave the exact script + reel number, or Trello genuinely isn't reachable.
