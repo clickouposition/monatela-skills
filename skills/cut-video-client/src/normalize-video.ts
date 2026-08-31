@@ -54,7 +54,7 @@ export function normalizeVideo(
   ].join(" ");
 
   try {
-    execSync(cmd, { stdio: "pipe", timeout: 600000 });
+    execSync(cmd, { stdio: "pipe", timeout: 3600000, maxBuffer: 1024 * 1024 * 64 });
   } catch (err) {
     const e = err as Error & { stderr?: Buffer };
     const stderr = e.stderr?.toString() ?? "";

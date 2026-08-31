@@ -36,6 +36,13 @@ Verify: `ffmpeg -version` and `ffprobe -version` both print a version string.
 
 Only needed if you want a secondary fallback transcriber — the pipeline is fully functional on AssemblyAI alone, see `API_REFERENCE.md`. Skip this if `https://aistudio.google.com/app/apikey` isn't available in your region.
 
+## 5b. (Optional) Trello access — only for batch mode
+
+Only needed for the batch/Trello-match workflow (`reference/trello-match.md`), which matches a whole folder of unlabeled raw videos against the client's "Conteúdo" list on Trello. Skip this entirely for normal single-video runs.
+
+- If the agent running this skill already has a Trello MCP connector available (e.g. inside Cowork), nothing to set up here — it uses that directly.
+- Otherwise, get a personal API key + token at `https://trello.com/power-ups/admin` and add them to `.env` (see step 7) as `TRELLO_API_KEY` / `TRELLO_TOKEN`.
+
 ## 6. Naming convention — read before running anything
 
 Every CapCut project this skill produces must be named:
@@ -62,6 +69,8 @@ Copy `.env.example` to `.env` in the skill directory and fill in your key(s):
 ```
 ASSEMBLYAI_API_KEY=your-key-here
 GEMINI_API_KEY=your-key-here-or-leave-blank
+TRELLO_API_KEY=your-key-here-or-leave-blank
+TRELLO_TOKEN=your-token-here-or-leave-blank
 ```
 
 **Never commit `.env` or paste its contents into a chat with Claude** — it's already listed in `.gitignore`.
