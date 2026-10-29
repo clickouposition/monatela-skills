@@ -48,12 +48,43 @@ const MATERIALS_KEYS = [
 ] as const;
 
 // CapCut stubs
+// Fallback signature when no CapCut-native draft exists to copy from.
+// CapCut 9.x refuses drafts stamped with an old app/format version
+// ("caminho desconhecido" / "unconventional path") — see detectNativeFormat().
 const PLATFORM_STUB = {
-  app_id: 359289, app_source: "cc", app_version: "8.3.0",
+  app_id: 359289, app_source: "cc", app_version: "9.5.0",
   device_id: "00000000000000000000000000000000", hard_disk_id: "",
   mac_address: "00000000000000000000000000000000",
-  os: "windows", os_version: "10.0.19045",
+  os: "windows", os_version: "10.0.26300",
 };
+const DRAFT_NEW_VERSION_STUB = "187.0.0";
+
+/**
+ * Copy platform + format version from the newest draft the installed CapCut
+ * created itself (it has Timelines/project.json). Keeps generated drafts in
+ * step with CapCut auto-updates instead of hardcoding a version that ages out.
+ */
+function detectNativeFormat(projectsRoot: string): {
+  platform: typeof PLATFORM_STUB; newVersion: string;
+} {
+  let best: { mtime: number; platform: typeof PLATFORM_STUB; newVersion: string } | null = null;
+  let entries: string[] = [];
+  try { entries = fs.readdirSync(projectsRoot); } catch { /* fall through */ }
+  for (const name of entries) {
+    const dir = path.join(projectsRoot, name);
+    const contentPath = path.join(dir, "draft_content.json");
+    if (!fs.existsSync(path.join(dir, "Timelines", "project.json")) || !fs.existsSync(contentPath)) continue;
+    try {
+      const d = JSON.parse(fs.readFileSync(contentPath, "utf-8"));
+      if (d?.platform?.app_source !== "cc" || !d?.new_version) continue;
+      const mtime = fs.statSync(contentPath).mtimeMs;
+      if (!best || mtime > best.mtime) {
+        best = { mtime, platform: { ...PLATFORM_STUB, ...d.platform }, newVersion: d.new_version };
+      }
+    } catch { /* encrypted or partial draft — skip */ }
+  }
+  return best ?? { platform: PLATFORM_STUB, newVersion: DRAFT_NEW_VERSION_STUB };
+}
 
 const CONFIG_STUB = {
   adjust_max_index: 1, attachment_info: [], combination_max_index: 1,
@@ -432,6 +463,7 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
 
   const projectsRoot = opts.draftsDir.replace(/\\/g, "/");
   const projectDir = `${projectsRoot}/${opts.projectName}`;
+  const native = detectNativeFormat(projectsRoot);
 
   const materials = buildEmptyMaterials();
 
@@ -533,14 +565,14 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
       adjusts: [], audios: [], effects: [], filters: [],
       handwrites: [], stickers: [], texts: [], videos: [],
     },
-    last_modified_platform: PLATFORM_STUB,
+    last_modified_platform: native.platform,
     lyrics_effects: [],
     materials,
     mutable_config: null,
     name: opts.projectName,
-    new_version: "163.0.0",
+    new_version: native.newVersion,
     path: "",
-    platform: PLATFORM_STUB,
+    platform: native.platform,
     relationships: [],
     render_index_track_mode_on: false,
     retouch_cover: null,
@@ -558,6 +590,25 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
 
   // Validate before writing
   const draftContent = DraftContentSchema.parse(draftContentRaw);
+
+  // Fields CapCut 9.x writes on every draft; older stubs lack them.
+  const dc = draftContent as any;
+  dc.mixed_track_mode_on ??= false;
+  dc.config.voice_change_sync ??= false;
+  dc.config.hdr_vivid ??= false;
+  dc.materials.ai_text_effects ??= [];
+  for (const t of dc.tracks) {
+    for (const s of t.segments) {
+      s.hdr_vivid_settings ??= null;
+      s.segment_color_tag ??= "";
+    }
+  }
+  for (const v of dc.materials.videos) {
+    v.is_set_beauty_mode ??= false;
+    v.is_video_copilot_aigc_content ??= false;
+    v.pre_applied_vip_materials ??= [];
+    v.workflow_node_id ??= "";
+  }
 
   // ─── Write project files ────────────────────────────────────────────
   fs.mkdirSync(projectDir, { recursive: true });
@@ -577,8 +628,50 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
     "utf-8"
   );
 
-  // Write sibling meta files
+  // CapCut 9.x opens the timeline listed in Timelines/project.json and treats
+  // the root draft_content.json as a mirror. Without this layout it rejects the
+  // draft with "caminho desconhecido" / "unconventional path".
   const nowMicro = Date.now() * 1000;
+  const nowSec = Math.floor(nowMicro / 1_000_000);
+  const timelineName = "Linha do tempo 01";
+  fs.mkdirSync(path.join(projectDir, "Timelines", draftId), { recursive: true });
+  fs.writeFileSync(
+    path.join(projectDir, "Timelines", draftId, "draft_content.json"),
+    JSON.stringify(draftContent),
+    "utf-8"
+  );
+  fs.writeFileSync(
+    path.join(projectDir, "Timelines", "project.json"),
+    JSON.stringify({
+      config: {
+        color_space: -1, hdr_vivid: false, mixed_track_mode_on: false,
+        render_index_track_mode_on: false, use_float_render: false,
+      },
+      create_time: nowMicro, id: freshUuid(), main_timeline_id: draftId,
+      timelines: [{
+        create_time: nowMicro, id: draftId, is_marked_delete: false,
+        name: timelineName, update_time: nowMicro,
+      }],
+      update_time: nowMicro, version: 0,
+    }),
+    "utf-8"
+  );
+  fs.writeFileSync(
+    path.join(projectDir, "timeline_layout.json"),
+    JSON.stringify({
+      dockItems: [{ dockIndex: 0, ratio: 1, timelineIds: [draftId], timelineNames: [timelineName] }],
+      layoutOrientation: 1,
+    }),
+    "utf-8"
+  );
+  fs.writeFileSync(
+    path.join(projectDir, "draft_settings"),
+    `[General]\r\ndraft_create_time=${nowSec}\r\ndraft_last_edit_time=${nowSec}\r\n` +
+      `real_edit_seconds=0\r\nreal_edit_keys=0\r\ncloud_last_modify_platform=windows\r\n`,
+    "utf-8"
+  );
+
+  // Write sibling meta files
   const firstClipPath = clips[0]?.sourcePath.replace(/\\/g, "/") ?? "";
   const firstFileName = firstClipPath.split("/").pop() ?? "video.mp4";
 
@@ -601,6 +694,10 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
     draft_is_article_video_draft: false, draft_is_cloud_temp_draft: false,
     draft_is_from_deeplink: "false", draft_is_invisible: false,
     draft_is_web_article_video: false,
+    draft_has_unfinished_aigc_video_effect: false,
+    draft_is_infinite_canvas_draft: false, draft_is_pippit_draft: false,
+    pippit_avatar_url: "", pippit_extra_info: "", pippit_id: "", pippit_user_name: "",
+    tm_draft_removed: 0,
     draft_materials: [
       {
         type: 0,
@@ -620,14 +717,16 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
       { type: 7, value: [] }, { type: 8, value: [] },
     ],
     draft_materials_copied_info: [], draft_name: opts.projectName,
-    draft_need_rename_folder: false, draft_new_version: "163.0.0",
+    draft_need_rename_folder: false, draft_new_version: "",
     draft_removable_storage_device: "",
     draft_root_path: projectsRoot, draft_segment_extra_info: [],
-    draft_timeline_materials_size_: 0, draft_type: "",
+    // Real size — CapCut lists 0 as "0.0 B" and treats it as an unreadable draft
+    draft_timeline_materials_size_: fs.statSync(path.join(projectDir, "draft_content.json")).size,
+    draft_type: "",
     draft_web_article_video_enter_from: "",
-    tm_draft_cloud_completed: "0", tm_draft_cloud_entry_id: -1,
+    tm_draft_cloud_completed: "", tm_draft_cloud_entry_id: -1,
     tm_draft_cloud_modified: 0, tm_draft_cloud_parent_entry_id: -1,
-    tm_draft_cloud_space_id: 0, tm_draft_cloud_user_id: 0,
+    tm_draft_cloud_space_id: -1, tm_draft_cloud_user_id: -1,
     tm_draft_create: nowMicro, tm_draft_modified: nowMicro,
     tm_duration: totalDurationMicro,
   };
