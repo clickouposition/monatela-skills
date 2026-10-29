@@ -14,7 +14,9 @@ npx tsx src/roughcut.ts build "<absolute-video-path>" "<chosen-hook-text>" "" "R
 1. Reuses the cached normalized video from [analyze.md](analyze.md).
 2. Reuses the cached AssemblyAI transcript.
 3. Loads `temp/ai-cuts.json` and applies those cuts as the **sole** repeat source.
-4. Writes a CapCut project under the given name.
+4. Writes a CapCut project under the given name, in the CapCut 9.x layout (`Timelines/project.json` + `Timelines/<id>/draft_content.json`). It copies the app/format version from the newest project the installed CapCut created itself, so keep at least one CapCut-made project in the drafts folder. With none, it falls back to the 9.5 format (`187.0.0`).
+
+If CapCut shows the project as "0.0 B" or says "caminho desconhecido", see the matching row in [INSTALL_AND_TROUBLESHOOTING.md](../INSTALL_AND_TROUBLESHOOTING.md).
 
 ## Reporting back
 
