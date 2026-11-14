@@ -7,7 +7,7 @@ AI agent skills built for real production workflows. Each skill lives in its own
 | Skill | Created by | What it does | Folder |
 |---|---|---|---|
 | `client-content-approval` | Monatela Communication | Uploads a finished content piece (carousel, reel, static post) to the right client folder in Google Drive and prepares the matching Trello card for client approval — without ever mixing up files or cards between clients. | [`skills/client-content-approval/`](skills/client-content-approval/) |
-| `cut-video-client` | Igniting Studios | Turns raw client video footage into a ready-to-open CapCut project — silences and repeated takes removed, only the on-camera speaker's audio kept (verified, not assumed), hook text overlay added, project named to a `REEL-XX-NOME-DO-CLIENTE` convention. | [`skills/cut-video-client/`](skills/cut-video-client/) |
+| `cut-video-client` | Igniting Studios | Turns raw client video footage into a ready-to-open CapCut project — silences and repeated takes removed, only the on-camera speaker's audio kept (verified, not assumed), project named to a `REEL-XX-NOME-DO-CLIENTE` convention — and can take it all the way to a full edit in the editor's own style: word-by-word captions, highlighted titles, eye-line zooms, J-cuts, transitions, SFX and color correction. | [`skills/cut-video-client/`](skills/cut-video-client/) |
 
 More skills get added here over time, each following the same internal layout — see "Adding a new skill" below.
 
