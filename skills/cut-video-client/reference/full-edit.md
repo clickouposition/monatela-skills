@@ -34,6 +34,8 @@ Needs `temp/transcript-words-<video>.json` and `temp/audio-<video>.wav` from [an
 | Zooms | Clips alternate 1.0 ↔ 1.12–1.25, anchored on the eye line; clips > 6 s get an internal zoom cut at a word gap; one slow push-in (1.0 → 1.07). |
 | J-cuts | Voice moves to its own audio track (video muted); at every real cut the next clip's audio leads its picture by 4 frames. |
 | Transitions | Flash preset + riser, low riser and "Transition 2" at ~⅓ and ~⅔ (one at ½ for videos ≤ 40 s), same volumes/offsets as the style project. |
+| SFX levels | **Every effect peaks at −12 dBFS** (`--sfx-peak`, default −12): the editor mixes the voice at −6 dB and the music at −12 dB. Each clip's volume is computed from the measured peak of the exact source window used (gain capped at CapCut's +20 dB). |
+| Title clicks | A mouse click the moment each line of a highlighted title appears (top / big / bottom). |
 | SFX | Low boom at the open; whoosh on up to two punch-in cuts; a mouse/button click on every other punch-in, a soft pop on zoom-outs, a pop-up on the call-to-action caption and a short whoosh into the slow push-in — never within 1 s of another accent. Files from the studio's SX folder: `MONATELA_SFX_DIR`, default `%USERPROFILE%\Desktop\MONATELA\SX`. |
 | Not added | Hook text, music, b-roll, audio treatment — the editor does these. |
 

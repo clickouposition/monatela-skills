@@ -721,15 +721,30 @@ const titleWindows = titleSpans.map((s) => {
   return { start, end: Math.min(totalSec, Math.max(s.end + 0.3, start + TITLE_MIN_SEC)) };
 });
 const captionsHiddenByTitles: string[] = [];
+const trimmedByTitle = new Set<Cap>();
 for (const w of titleWindows) {
   for (const c of caps) {
     if (c.end <= w.start || c.start >= w.end) continue;
-    if (c.start >= w.start) c.start = w.end; // began under the title → wait for it to leave
-    else c.end = Math.min(c.end, w.start);   // still up when the title arrives → leave first
+    trimmedByTitle.add(c);
+    if (c.start >= w.start) {
+      // began under the title → shows right after it leaves, long enough to read
+      c.start = w.end;
+      c.end = Math.max(c.end, w.end + 0.8);
+    } else c.end = Math.min(c.end, w.start); // still up when the title arrives → leave first
+  }
+  // captions pushed to the same moment become one, so no words are lost
+  for (let i = caps.length - 1; i > 0; i--) {
+    if (Math.abs(caps[i].start - caps[i - 1].start) < 0.01 && caps[i].start === w.end) {
+      caps[i - 1].text += ` ${caps[i].text}`;
+      caps[i - 1].words.push(...caps[i].words);
+      caps[i - 1].end = Math.max(caps[i - 1].end, caps[i].end);
+      caps.splice(i, 1);
+    }
   }
 }
+// only a caption a title squeezed to nothing is dropped — short captions elsewhere stay (min length is set later)
 for (let i = caps.length - 1; i >= 0; i--) {
-  if (caps[i].end - caps[i].start < 0.3) captionsHiddenByTitles.push(caps.splice(i, 1)[0].text);
+  if (trimmedByTitle.has(caps[i]) && caps[i].end - caps[i].start < 0.3) captionsHiddenByTitles.push(caps.splice(i, 1)[0].text);
 }
 
 const textSegs = caps.map((c, i) => {
@@ -763,6 +778,7 @@ const textSegs = caps.map((c, i) => {
 });
 out.tracks.push(newTrack("text", 1, textSegs));
 
+const titleClickTimes: number[] = []; // when each title line appears (gets a mouse click)
 if (titleSpans.length) {
   const presetName = flag("title-preset") ?? "Minhas predefinições5";
   const presetDir = path.join(process.env.LOCALAPPDATA ?? "", "CapCut/User Data/Presets/Combination/Presets", presetName);
@@ -792,6 +808,7 @@ if (titleSpans.length) {
     const seg = cloneSegment(tpl, presetIdx, out);
     const start = titleWindows[k].start;
     const dur = titleWindows[k].end - start;
+    const lineStarts: number[] = [];
     seg.target_timerange = { start: micro(start), duration: micro(dur) };
     seg.source_timerange = { start: 0, duration: micro(dur) };
     const vmat = findMat(out, seg.material_id);
@@ -813,6 +830,7 @@ if (titleSpans.length) {
     const width = new Map<Json, number>();
     for (const [s, text] of roles) {
       if (!s) continue;
+      if (text) lineStarts.push(start + sec(s.target_timerange.start));
       const mat = nested.materials.texts.find((t: Json) => t.id === s.material_id);
       const content = JSON.parse(mat.content);
       const font = findFont(content.styles[0].font?.path ?? mat.font_path);
@@ -861,6 +879,7 @@ if (titleSpans.length) {
       smalls[1].clip.transform.y -= clearShift(m, bigMask, W, H, 1) / 960; // move down
     }
     dr.draft = nested;
+    titleClickTimes.push(...lineStarts);
     return seg;
   });
   out.tracks.push(newTrack("video", 2, titleSegs));
@@ -885,6 +904,24 @@ const flashSegs = transitions.map((t) => {
 });
 out.tracks.push(newTrack("video", 2, flashSegs));
 
+// Every effect peaks at the same level, --sfx-peak (default −12 dBFS): the editor mixes the voice at
+// −6 dB and the music at −12 dB, so effects never poke out above the bed. The clip volume is set from
+// the measured peak of the exact source window used.
+const SFX_PEAK_DB = parseFloat(flag("sfx-peak") ?? "-12");
+const peakCache = new Map<string, number>();
+function sfxGain(file: string, from: number, to: number): number {
+  const key = `${file}|${from}|${to}`;
+  let peak = peakCache.get(key);
+  if (peak === undefined) {
+    const log = execSync(
+      `ffmpeg -hide_banner -ss ${from} -t ${Math.max(0.02, to - from)} -i "${file}" -af volumedetect -f null - 2>&1`,
+    ).toString();
+    peak = parseFloat(log.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1] ?? "0");
+    peakCache.set(key, peak);
+  }
+  return Math.min(10, Math.pow(10, (SFX_PEAK_DB - peak) / 20)); // linear gain, capped at CapCut's +20 dB
+}
+
 function sfxSeg(key: keyof typeof SFX, at: number, srcStart = 0, srcEnd?: number): Json {
   const file = `${SFX_DIR}/${SFX[key].file}`;
   const fileDur = audioDuration(file);
@@ -895,7 +932,7 @@ function sfxSeg(key: keyof typeof SFX, at: number, srcStart = 0, srcEnd?: number
     path: file, name: SFX[key].file, duration: micro(fileDur),
     unique_id: randomBytes(16).toString("hex"), music_id: randomUUID(), local_material_id: randomUUID(),
   });
-  seg.volume = SFX[key].vol;
+  seg.volume = sfxGain(file, srcStart, end);
   seg.source_timerange = { start: micro(srcStart), duration: micro(end - srcStart) };
   seg.target_timerange = { start: micro(at), duration: micro(end - srcStart) };
   return seg;
@@ -917,7 +954,11 @@ if (whooshAt.length) out.tracks.push(newTrack("audio", 0, whooshAt.map((t) => sf
 
 // Cut accents: a click on every punch-in, a soft pop on every zoom-out, a pop-up on the call to action
 // and a short whoosh into the slow push-in — never within 1 s of a sound already placed.
-const busy = [0, ...transitions, ...whooshAt];
+// a mouse click on every line of a highlighted title, the moment that word appears
+if (titleClickTimes.length) {
+  out.tracks.push(newTrack("audio", 0, titleClickTimes.map((t) => sfxSeg("mouseClick", t - 0.02, 0.1, 0.28))));
+}
+const busy = [0, ...transitions, ...whooshAt, ...titleClickTimes];
 const free = (t: number) => busy.every((x) => Math.abs(x - t) >= 1);
 // the call-to-action pop-up and the slow-zoom whoosh are claimed first, so a cut accent can't crowd them out
 const cta = caps.find((c) => /direct|link da bio|agende|me chama|fala comigo|me manda/i.test(c.text));
