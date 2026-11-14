@@ -49,6 +49,7 @@ If something that was supposed to be verified turns out broken partway through (
 | 4 | Review the transcript and write `temp/ai-cuts.json` | [reference/cut-review.md](reference/cut-review.md) |
 | 5 | Propose hook text overlay options | [reference/hooks.md](reference/hooks.md) |
 | 6 | Build the CapCut project and report back | [reference/build.md](reference/build.md) |
+| 7 | *(When asked to edit, not just roughcut)* Captions, eye-line zooms, J-cuts, flash + SFX on top of a rough project, styled from the client's finished project — no hook | [reference/full-edit.md](reference/full-edit.md) |
 
 No need to read every reference at once. Load the one for the step currently running. Step 1 and step 1-fallback are alternatives, not sequential — pick per the rule above and use the other's naming-confirmation output the same way going forward.
 

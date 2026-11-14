@@ -17,7 +17,26 @@
 | `API_REFERENCE.md` | The real FFmpeg commands and AssemblyAI (REST) endpoints that cover the whole flow, plus notes on the CapCut project file format the pipeline writes directly. |
 | `SETUP.md` | A configuration guide for a brand new machine, meant for a **human** to follow: accounts, credentials, naming convention, checklist before running. |
 | `INSTALL_AND_TROUBLESHOOTING.md` | A guide for the **AI agent** to read before executing: a pre-flight checklist (what to check before running) plus an error-to-cause-to-fix table with the real problems found while building this, so the agent already knows the fix without having to investigate from scratch. |
-| `src/*.ts` | The actual pipeline scripts (`roughcut.ts` orchestrates `analyze`/`build`, `diarize-speakers.ts` does the on-camera speaker check). Called via `npx tsx`, not imported as a library. |
+| `src/*.ts` | The actual pipeline scripts (`roughcut.ts` orchestrates `analyze`/`build`, `diarize-speakers.ts` does the on-camera speaker check, `build-ranges.ts` builds a rough cut from a hand-picked list of takes, `full-edit.ts` does the full edit on top of a rough cut, `measure-text.ts` measures real text widths for title layout). Called via `npx tsx`, not imported as a library. |
+
+## Features
+
+**Rough cut** (steps 1–6)
+- Trello **Conteúdo** matching: a video is mapped to its card (script + `REEL-XX-NOME-DO-CLIENTE`) from its transcript.
+- On-camera speaker only: diarization plus a per-sentence loudness check. A director who reads each line before the talent repeats it sits ~10 dB lower, and their takes never reach the cut.
+- Cut from a keep list (`build-ranges.ts`): the last clean on-camera take of each script line. Edges snap to the waveform without crossing into neighbouring words, the next take bleeding in is detected, and soft last words are never clipped. Tight endings: `--end-db=-30 --pad-out=0.05`.
+
+**Full edit** (step 7, `full-edit.ts`) — styled from a finished project of the same client
+- Captions: the editor's caption template, per-client font, revealed **one word at a time** (per-word timings), transcription fixes per video.
+- **Highlighted titles**: "small / **BIG** / small" blocks cloned from a CapCut preset, laid out from the real font metrics (lines hug the big word's edges, letters never touch, block centred). Running captions are hidden while a title shows.
+- Eye-line **zooms** (punch-ins, one slow push-in); `--center` frames an off-centre speaker on the vertical centre line.
+- **J-cuts** (voice on its own track, picture 4 frames late).
+- Flash transitions + risers, and **SFX accents** from the studio's SX folder (`MONATELA_SFX_DIR`): mouse/button clicks on punch-ins, soft pops on zoom-outs, a pop-up on the call to action, whooshes.
+- **Color correction** (`--grade`): CapCut's basic adjustments (temperature, brightness, contrast, shadows, saturation, sharpen…) on every clip, values measured from the footage.
+- `--keep-cuts` keeps an editor's own cut untouched; `--in-place` edits their project directly (after a backup).
+- Safe CapCut output: the real source duration is written everywhere (a 60 s placeholder used to make CapCut reset clips to 0:00), compound clips get their `subdraft/` files.
+
+See [reference/full-edit.md](reference/full-edit.md) for every option.
 
 ## Where to start on a new machine
 
