@@ -46,7 +46,7 @@ When the cut is decided take by take (a director prompts every line and the tale
 1. Split the transcript into sentences and label each by peak loudness — the on-camera speaker is ~10 dB louder than an off-camera prompter (C0513/C0514: Lívia −19…−31 dB, prompter −33…−41 dB). Diarization utterances lump prompt + repeat together, so don't trust them alone.
 2. Pick the last clean on-camera take of each script line; write `temp/keeps-<video>.json` = `[[firstWordStart, lastWordEnd], …]` in timeline order.
 3. Check every kept take's peak level again — a take at the prompter's level is the prompter, swap it.
-4. `npx tsx src/build-ranges.ts "<video>" REEL-XX-NOME "<keeps.json>"` — edges snap to the waveform without crossing into neighbouring words, never cut a soft last word, no hook track. The editor wants tight sentence endings: add `--end-db=-30 --pad-out=0.05` (drops the voice's fading tail; used on Ernane REEL-01).
+4. `npx tsx src/build-ranges.ts "<video>" REEL-XX-NOME "<keeps.json>"` — edges snap to the waveform without crossing into neighbouring words, never cut a soft last word, no hook track. The editor wants tight sentence endings: add `--end-db=-30 --pad-out=0.05` (drops the voice's fading tail).
 
 Then go to [full-edit.md](full-edit.md) with `--keep-cuts`.
 

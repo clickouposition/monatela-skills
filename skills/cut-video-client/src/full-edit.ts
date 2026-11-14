@@ -22,7 +22,7 @@ import { inkWidth, inkMasks, clearShift, type PlacedText } from "./measure-text.
 
 const DRAFTS = path.join(process.env.LOCALAPPDATA ?? "", "CapCut/User Data/Projects/com.lveditor.draft");
 const TEMP_DIR = path.resolve(import.meta.dirname, "..", "temp");
-const SFX_DIR = (process.env.MONATELA_SFX_DIR ?? "C:/Users/candi/Desktop/MONATELA/SX").replace(/\\/g, "/");
+const SFX_DIR = (process.env.MONATELA_SFX_DIR ?? path.join(process.env.USERPROFILE ?? "", "Desktop/MONATELA/SX")).replace(/\\/g, "/");
 
 const SFX = {
   boom: { file: "ES_Designed, Boom, Impact, Dark, Cinematic, Low Long Rumble 01 - Epidemic Sound.mp3", vol: 0.296 },
@@ -221,7 +221,7 @@ const wavPath = path.join(TEMP_DIR, `audio-${videoBase}.wav`).replace(/\\/g, "/"
 if (!fs.existsSync(wavPath)) throw new Error(`missing ${wavPath} — run analyze first`);
 
 // ─── Tighten every cut to the waveform ──────────────────────────────────
-// Calibrated on the editor's own fixes to REEL-04 (Fran): the head starts ~40 ms before
+// Calibrated on the editor's own fixes to a reel: the head starts ~40 ms before
 // the voice rises; the tail keeps ~0.3 s of decay, or stops 0.25 s before the next take
 // starts; a word clipped mid-way is recovered, the next take's first syllable is dropped.
 const SPEECH_DB = -38;
