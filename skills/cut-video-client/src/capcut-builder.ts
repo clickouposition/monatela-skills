@@ -701,13 +701,15 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
     draft_materials: [
       {
         type: 0,
+        // Real source duration: CapCut can re-sync a video material's length from this entry on
+        // open, and then resets every clip that starts past it to 0:00 (picture out of sync).
         value: [{
-          ai_group_type: "", create_time: -1, duration: toMicro(60),
+          ai_group_type: "", create_time: -1, duration: toMicro(opts.sourceVideoDurationSec),
           enter_from: 0, extra_info: firstFileName,
           file_Path: firstClipPath, height: 1920,
           id: freshUuid(), import_time: -1, import_time_ms: -1,
           item_source: 1, md5: "", metetype: "video",
-          roughcut_time_range: { duration: toMicro(60), start: 0 },
+          roughcut_time_range: { duration: toMicro(opts.sourceVideoDurationSec), start: 0 },
           sub_time_range: { duration: -1, start: -1 },
           type: 0, width: 1080,
         }],
