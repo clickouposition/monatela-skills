@@ -63,7 +63,8 @@ const sec = (us: number) => us / MICRO;
 
 // ─── load ────────────────────────────────────────────────────────────────
 const srcDir = path.join(DRAFTS, roughName);
-const d: Json = JSON.parse(fs.readFileSync(path.join(srcDir, "draft_content.json"), "utf8"));
+const srcFile = ["draft_info.json", "draft_content.json"].map((f) => path.join(srcDir, f)).find((p) => fs.existsSync(p))!;
+const d: Json = JSON.parse(fs.readFileSync(srcFile, "utf8"));
 const words: { text: string; start: number; end: number }[] =
   JSON.parse(fs.readFileSync(path.join(TEMP, `transcript-words-normalized-${videoBase}.json`), "utf8")).words;
 
@@ -197,7 +198,7 @@ function textMaterial(text: string) {
   };
 }
 // the rough project's (empty) hook text is the template for every caption material/segment
-const raw: Json = JSON.parse(fs.readFileSync(path.join(srcDir, "draft_content.json"), "utf8"));
+const raw: Json = JSON.parse(fs.readFileSync(srcFile, "utf8"));
 const textSegTemplate = raw.tracks.find((t: Json) => t.type === "text").segments[0];
 const tmplBase = raw.materials.texts[0];
 
@@ -328,11 +329,11 @@ const newId = uuid();
 const oldId = d.id;
 d.id = newId; d.name = outName;
 const json = JSON.stringify(d);
-fs.writeFileSync(path.join(outDir, "draft_content.json"), json);
+for (const f of ["draft_content.json", "draft_info.json"]) fs.writeFileSync(path.join(outDir, f), json); // 9.9+ reads draft_info.json
 const tlDir = path.join(outDir, "Timelines");
 fs.rmSync(path.join(tlDir, oldId), { recursive: true, force: true });
 fs.mkdirSync(path.join(tlDir, newId), { recursive: true });
-fs.writeFileSync(path.join(tlDir, newId, "draft_content.json"), json);
+for (const f of ["draft_content.json", "draft_info.json"]) fs.writeFileSync(path.join(tlDir, newId, f), json);
 const proj = JSON.parse(fs.readFileSync(path.join(tlDir, "project.json"), "utf8"));
 proj.id = uuid(); proj.main_timeline_id = newId; proj.timelines[0].id = newId;
 fs.writeFileSync(path.join(tlDir, "project.json"), JSON.stringify(proj));

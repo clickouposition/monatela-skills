@@ -39,6 +39,10 @@ Auto-detected by the scripts at:
 
 If the user's CapCut is installed somewhere non-standard, accept a custom path — it's passed as the 3rd argument to `build` (see [build.md](build.md)).
 
+## 4b. One CapCut-made draft must exist
+
+The builder copies the draft format (platform, app version, `new_version`) from the newest project that the installed CapCut created itself. On a fresh install there's none, and the generated projects won't open in newer builds. Before the first `build` on a machine, check that there is at least one folder in the drafts directory that has a `draft_info.json` the skill didn't write. If there isn't, ask the user to open CapCut, create one empty project and close CapCut.
+
 ## 5. Studio folder and client profile (only before an edit, Step 7/7b)
 
 The studio assets live in `$MONATELA_DIR` (default `~/Desktop/MONATELA`): `SX/` (SFX), `TRANSICTIONS/` (flash clip) and `FONTES/` (client fonts). Run `npx tsx src/client-profile.ts <CLIENT>`. Every line must say `OK`. A missing font is the usual gap on a new machine: ask the user to copy the exact file into `FONTES/`. Fonts are licensed, so never download one from a random site. See [../clients/README.md](../clients/README.md).

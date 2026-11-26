@@ -72,8 +72,9 @@ function detectNativeFormat(projectsRoot: string): {
   try { entries = fs.readdirSync(projectsRoot); } catch { /* fall through */ }
   for (const name of entries) {
     const dir = path.join(projectsRoot, name);
-    const contentPath = path.join(dir, "draft_content.json");
-    if (!fs.existsSync(path.join(dir, "Timelines", "project.json")) || !fs.existsSync(contentPath)) continue;
+    // CapCut ≥ 9.9 (macOS) names the timeline file draft_info.json; older builds draft_content.json
+    const contentPath = ["draft_info.json", "draft_content.json"].map((f) => path.join(dir, f)).find((p) => fs.existsSync(p));
+    if (!fs.existsSync(path.join(dir, "Timelines", "project.json")) || !contentPath) continue;
     try {
       const d = JSON.parse(fs.readFileSync(contentPath, "utf-8"));
       if (d?.platform?.app_source !== "cc" || !d?.new_version) continue;
@@ -82,6 +83,13 @@ function detectNativeFormat(projectsRoot: string): {
         best = { mtime, platform: { ...PLATFORM_STUB, ...d.platform }, newVersion: d.new_version };
       }
     } catch { /* encrypted or partial draft — skip */ }
+  }
+  if (!best) {
+    console.warn(
+      "  WARNING: no draft created by the installed CapCut was found, so this project is stamped with a\n" +
+      "  generic Windows/9.5 format that newer CapCut builds refuse to open. Open CapCut, create one empty\n" +
+      "  project, close CapCut, then rebuild (or run src/fix-draft-format.ts on the existing projects)."
+    );
   }
   return best ?? { platform: PLATFORM_STUB, newVersion: DRAFT_NEW_VERSION_STUB };
 }
@@ -597,6 +605,7 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
   dc.config.voice_change_sync ??= false;
   dc.config.hdr_vivid ??= false;
   dc.materials.ai_text_effects ??= [];
+  dc.materials.ai_generate_holders ??= [];
   for (const t of dc.tracks) {
     for (const s of t.segments) {
       s.hdr_vivid_settings ??= null;
@@ -621,12 +630,10 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
     fs.mkdirSync(path.join(projectDir, d), { recursive: true });
   }
 
-  // Write draft_content.json
-  fs.writeFileSync(
-    path.join(projectDir, "draft_content.json"),
-    JSON.stringify(draftContent),
-    "utf-8"
-  );
+  // Write the timeline under both names: CapCut ≥ 9.9 reads draft_info.json, older builds draft_content.json
+  for (const f of ["draft_content.json", "draft_info.json"]) {
+    fs.writeFileSync(path.join(projectDir, f), JSON.stringify(draftContent), "utf-8");
+  }
 
   // CapCut 9.x opens the timeline listed in Timelines/project.json and treats
   // the root draft_content.json as a mirror. Without this layout it rejects the
@@ -635,11 +642,9 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
   const nowSec = Math.floor(nowMicro / 1_000_000);
   const timelineName = "Linha do tempo 01";
   fs.mkdirSync(path.join(projectDir, "Timelines", draftId), { recursive: true });
-  fs.writeFileSync(
-    path.join(projectDir, "Timelines", draftId, "draft_content.json"),
-    JSON.stringify(draftContent),
-    "utf-8"
-  );
+  for (const f of ["draft_content.json", "draft_info.json"]) {
+    fs.writeFileSync(path.join(projectDir, "Timelines", draftId, f), JSON.stringify(draftContent), "utf-8");
+  }
   fs.writeFileSync(
     path.join(projectDir, "Timelines", "project.json"),
     JSON.stringify({
@@ -667,7 +672,7 @@ export function buildRoughcutProject(opts: BuildRoughcutOpts): BuildRoughcutResu
   fs.writeFileSync(
     path.join(projectDir, "draft_settings"),
     `[General]\r\ndraft_create_time=${nowSec}\r\ndraft_last_edit_time=${nowSec}\r\n` +
-      `real_edit_seconds=0\r\nreal_edit_keys=0\r\ncloud_last_modify_platform=windows\r\n`,
+      `real_edit_seconds=0\r\nreal_edit_keys=0\r\ncloud_last_modify_platform=${native.platform.os ?? "windows"}\r\n`,
     "utf-8"
   );
 
