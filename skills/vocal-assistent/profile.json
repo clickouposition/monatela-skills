@@ -1,0 +1,37 @@
+{
+  "shortcut_activation": "hold_or_toggle",
+  "selected_language": "auto",
+  "spoken_languages": [
+    "pt",
+    "en"
+  ],
+  "post_process_enabled": true,
+  "post_process_provider_id": "custom",
+  "post_process_selected_prompt_id": "auto_pt_en",
+  "paste_method": "ctrl_v",
+  "reliable_paste": true,
+  "paste_delay_ms": 120,
+  "paste_delay_after_ms": 150,
+  "model_unload_timeout": "never",
+  "autostart_enabled": true,
+  "start_hidden": true,
+  "update_checks_enabled": false,
+  "audio_feedback": true,
+  "append_trailing_space": true,
+  "filler_word_removal_enabled": true,
+  "bindings": {
+    "transcribe": "ctrl+option+space",
+    "transcribe_with_post_process": "option+space",
+    "cancel": "escape"
+  },
+  "post_process_models": {
+    "custom": "gemma4:e4b"
+  },
+  "selected_model": "turbo",
+  "onboarding_completed": true,
+  "prompt": {
+    "id": "auto_pt_en",
+    "name": "Auto PT/EN",
+    "file": "prompts/auto-pt-en.txt"
+  }
+}
