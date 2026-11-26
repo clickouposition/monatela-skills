@@ -42,11 +42,20 @@ export function normalizeVideo(
   // Decode (auto-rotates per metadata) -> scale to 1080x1920 portrait ->
   // force 30fps -> re-encode H.264 + AAC. The result has identical
   // timestamps for ffmpeg seeking and CapCut playback.
+  // Minimal ffmpeg builds (e.g. Remotion's bundled one on macOS) lack the
+  // pad/fps filters. Fall back to scale-only + output-rate CFR; exact for
+  // 9:16 sources, which is what this studio shoots.
+  const filters = execSync(`"${ffmpegPath}" -hide_banner -filters`, { encoding: "utf-8" });
+  const hasPad = /\spad\s/.test(filters) && /\sfps\s/.test(filters);
+  const vf = hasPad
+    ? `-vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30"`
+    : `-vf "scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2" -r 30 -fps_mode cfr`;
+  if (!hasPad) console.log("    (minimal ffmpeg: no pad/fps filters, using scale + -r 30)");
   const cmd = [
     `"${ffmpegPath}"`,
     `-y`,
     `-i "${absSource}"`,
-    `-vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30"`,
+    vf,
     `-c:v libx264 -preset fast -crf 20 -pix_fmt yuv420p`,
     `-c:a aac -b:a 192k -ar 48000 -ac 2`,
     `-movflags +faststart`,

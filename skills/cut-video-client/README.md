@@ -17,7 +17,9 @@
 | `API_REFERENCE.md` | The real FFmpeg commands and AssemblyAI (REST) endpoints that cover the whole flow, plus notes on the CapCut project file format the pipeline writes directly. |
 | `SETUP.md` | A configuration guide for a brand new machine, meant for a **human** to follow: accounts, credentials, naming convention, checklist before running. |
 | `INSTALL_AND_TROUBLESHOOTING.md` | A guide for the **AI agent** to read before executing: a pre-flight checklist (what to check before running) plus an error-to-cause-to-fix table with the real problems found while building this, so the agent already knows the fix without having to investigate from scratch. |
-| `src/*.ts` | The actual pipeline scripts (`roughcut.ts` orchestrates `analyze`/`build`, `diarize-speakers.ts` does the on-camera speaker check, `build-ranges.ts` builds a rough cut from a hand-picked list of takes, `full-edit.ts` does the full edit on top of a rough cut, `measure-text.ts` measures real text widths for title layout). Called via `npx tsx`, not imported as a library. |
+| `clients/_TEMPLATE.json` | Template for a client's style profile (caption font, size, spacing, colour, shadow, zoom, flash). Filled in on first use as `clients/<CLIENT>.json`, which stays on the machine (gitignored). See `clients/README.md`. |
+| `bin/ffmpeg`, `bin/ffprobe` | macOS wrappers around the ffmpeg bundled with Remotion, for machines without Homebrew. |
+| `src/*.ts` | The actual pipeline scripts (`roughcut.ts` orchestrates `analyze`/`build`, `diarize-speakers.ts` does the on-camera speaker check, `build-ranges.ts` builds a rough cut from a hand-picked list of takes, `full-edit.ts` does the full edit on top of a rough cut, `measure-text.ts` measures real text widths for title layout, `style-edit.ts` does the full edit from a client profile when no finished project is available, `client-profile.ts` loads profiles and runs the font/asset pre-flight, `retranscribe-window.ts` fixes a window transcribed in the wrong language). Called via `npx tsx`, not imported as a library. |
 
 ## Features
 

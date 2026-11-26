@@ -15,7 +15,7 @@
  */
 
 import { resolve, basename, extname, join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, copyFileSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { detectSilence, deriveSilenceFromWords } from "./detect-silence.js";
 import {
@@ -468,6 +468,10 @@ async function runBuild(args: string[]) {
 
   // Use the SOURCE basename for the project name (not the normalized temp file)
   const videoName = basename(sourcePath, extname(sourcePath));
+  // Keep a per-video copy of the cut list: ai-cuts.json is shared scratch, but
+  // style-edit needs this video's cuts later (after other videos overwrote it).
+  const sharedCuts = join(resolve(import.meta.dirname, ".."), "temp", "ai-cuts.json");
+  if (existsSync(sharedCuts)) copyFileSync(sharedCuts, join(resolve(import.meta.dirname, ".."), "temp", `ai-cuts-${videoName}.json`));
   let projectName = customProjectName || `${videoName}-roughcut`;
 
   // Auto-increment if project exists

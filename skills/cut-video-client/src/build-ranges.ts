@@ -13,9 +13,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
+import { CAPCUT_USER_DATA, findFfprobe } from "./ffmpeg.js";
 import { buildRoughcutProject } from "./capcut-builder.js";
 
-const DRAFTS = path.join(process.env.LOCALAPPDATA ?? "", "CapCut/User Data/Projects/com.lveditor.draft");
+const DRAFTS = path.join(CAPCUT_USER_DATA, "Projects/com.lveditor.draft");
 const TEMP_DIR = path.resolve(import.meta.dirname, "..", "temp");
 const SPEECH_DB = -38;
 const FRAME = 0.01;
@@ -58,7 +59,7 @@ for (let f = 0; f < level.length; f++) {
   }
   level[f] = 10 * Math.log10(sum / perFrame + 1e-12);
 }
-const videoDur = parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${normalized}"`).toString());
+const videoDur = parseFloat(execSync(`"${findFfprobe(true)}" -v error -show_entries format=duration -of csv=p=0 "${normalized}"`).toString());
 const frame = (t: number) => Math.max(0, Math.min(level.length - 1, Math.round(t / FRAME)));
 const loud = (f: number) => level[f] > SPEECH_DB;
 

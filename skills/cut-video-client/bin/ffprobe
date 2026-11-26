@@ -1,0 +1,4 @@
+#!/bin/zsh
+# macOS wrapper: Remotion's bundled ffprobe needs its dylibs on the library path
+D="$(cd "$(dirname "$0")/../node_modules/@remotion/compositor-darwin-arm64" && pwd)"
+DYLD_LIBRARY_PATH="$D" exec "$D/ffprobe" "$@"

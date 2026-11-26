@@ -78,7 +78,6 @@ export async function transcribeWords(
   if (!existsSync(audioPath)) {
     console.log("  Extracting audio for AssemblyAI upload...");
     const { execSync } = await import("node:child_process");
-    const ffmpegPath = "ffmpeg";
     const cmd = `"${ffmpegPath}" -y -i "${resolve(videoPath)}" -vn -ac 1 -c:a pcm_s16le "${audioPath}"`;
     execSync(cmd, { stdio: "pipe", timeout: 120000 });
     const sizeMB = (statSync(audioPath).size / 1024 / 1024).toFixed(1);
