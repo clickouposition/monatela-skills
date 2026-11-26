@@ -8,7 +8,7 @@ Check with `ffmpeg -version`. If not found:
 
 - **Windows, winget available:** `winget install Gyan.FFmpeg`
 - **Windows, winget unavailable:** download the "essentials" build from `https://www.gyan.dev/ffmpeg/builds/`, extract it under `%LOCALAPPDATA%\Programs\ffmpeg`, and add its `bin` folder to the user's PATH permanently (`[Environment]::SetEnvironmentVariable("Path", ..., "User")`). A freshly-opened terminal will then find it on PATH — the **current** shell session still needs the same folder exported inline (`export PATH="$PATH:<bin-folder>"` or `$env:Path += ...`) for the rest of this run, since the running shell doesn't pick up the registry change.
-- **macOS:** `brew install ffmpeg`
+- **macOS:** `brew install ffmpeg`. Without Homebrew, the repo ships `bin/ffmpeg` and `bin/ffprobe` wrappers around the ffmpeg bundled in `node_modules/@remotion/compositor-darwin-arm64` (found automatically by `src/ffmpeg.ts`). That build is minimal: no `pad`/`fps` filters (normalize falls back to scale + `-r 30`, exact for 9:16 footage), no `volumedetect` (levels are measured from decoded PCM instead), and no `drawtext`. Without `drawtext`, full-edit's highlighted titles (`measure-text.ts`) won't work, so install the full ffmpeg if titles are needed.
 
 ## 2. Node modules
 
@@ -39,4 +39,8 @@ Auto-detected by the scripts at:
 
 If the user's CapCut is installed somewhere non-standard, accept a custom path — it's passed as the 3rd argument to `build` (see [build.md](build.md)).
 
-Once all four checks pass, move to [trello-match.md](trello-match.md) — that's the default Step 1 now, for one video or many. Only go to [find-and-name.md](find-and-name.md) directly if the user already gave the exact script + reel number, or Trello genuinely isn't reachable.
+## 5. Studio folder and client profile (only before an edit, Step 7/7b)
+
+The studio assets live in `$MONATELA_DIR` (default `~/Desktop/MONATELA`): `SX/` (SFX), `TRANSICTIONS/` (flash clip) and `FONTES/` (client fonts). Run `npx tsx src/client-profile.ts <CLIENT>`. Every line must say `OK`. A missing font is the usual gap on a new machine: ask the user to copy the exact file into `FONTES/`. Fonts are licensed, so never download one from a random site. See [../clients/README.md](../clients/README.md).
+
+Once checks 1–4 pass (and 5 before an edit), move to [trello-match.md](trello-match.md) — that's the default Step 1 now, for one video or many. Only go to [find-and-name.md](find-and-name.md) directly if the user already gave the exact script + reel number, or Trello genuinely isn't reachable.

@@ -1,0 +1,20 @@
+{
+  "client": "NOME-DO-CLIENTE",
+  "projectPattern": "REEL-XX-NOME-DO-CLIENTE",
+  "trelloBoard": "NOME-DO-CLIENTE | LINHA EDITORIAL",
+  "captions": {
+    "font": "Nome da fonte como aparece no CapCut",
+    "fontFiles": ["ArquivoDaFonte.ttf", "Arquivo Da Fonte.otf"],
+    "size": 9,
+    "letterSpacing": 0,
+    "color": "#FFFFFF",
+    "case": "lower",
+    "stripPunctuation": true,
+    "wordsPerCaption": 1,
+    "y": -0.075,
+    "shadow": { "opacity": 25, "blur": 20, "distance": 10, "angle": -70, "color": "#000000" }
+  },
+  "zoom": { "punch": 1.18, "splitClipsLongerThanSec": 6 },
+  "flash": { "file": "TRANSICTIONS/White.mov", "count": "auto" },
+  "sfx": { "peakDb": -12 }
+}

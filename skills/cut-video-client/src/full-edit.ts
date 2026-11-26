@@ -18,11 +18,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID, randomBytes } from "node:crypto";
 import { execSync } from "node:child_process";
+import { CAPCUT_USER_DATA, findFfprobe, peakDb as filePeakDb } from "./ffmpeg.js";
 import { inkWidth, inkMasks, clearShift, type PlacedText } from "./measure-text.js";
 
-const DRAFTS = path.join(process.env.LOCALAPPDATA ?? "", "CapCut/User Data/Projects/com.lveditor.draft");
+const DRAFTS = path.join(CAPCUT_USER_DATA, "Projects/com.lveditor.draft");
 const TEMP_DIR = path.resolve(import.meta.dirname, "..", "temp");
-const SFX_DIR = (process.env.MONATELA_SFX_DIR ?? path.join(process.env.USERPROFILE ?? "", "Desktop/MONATELA/SX")).replace(/\\/g, "/");
+const SFX_DIR = (process.env.MONATELA_SFX_DIR ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", "Desktop/MONATELA/SX")).replace(/\\/g, "/");
 
 const SFX = {
   boom: { file: "ES_Designed, Boom, Impact, Dark, Cinematic, Low Long Rumble 01 - Epidemic Sound.mp3", vol: 0.296 },
@@ -110,7 +111,7 @@ function newTrack(type: string, flag: number, segments: Json[]): Json {
 }
 
 function audioDuration(file: string): number {
-  return parseFloat(execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${file}"`).toString());
+  return parseFloat(execSync(`"${findFfprobe(true)}" -v error -show_entries format=duration -of csv=p=0 "${file}"`).toString());
 }
 
 // ─── Inputs ─────────────────────────────────────────────────────────────
@@ -522,7 +523,7 @@ out.tracks = [];
 // on every speaker clip. Types: temperature, tone (tint), brightness, contrast, saturation, shadow,
 // white, black, light_sensation, sharpen, clear.
 const GRADE_EFFECT_ID = "7501974767453474064";
-const GRADE_EFFECT_DIR = `${(process.env.LOCALAPPDATA ?? "").replace(/\\/g, "/")}/CapCut/User Data/Cache/effect/${GRADE_EFFECT_ID}/20cd8db6531c21bf7e4053026d20e395`;
+const GRADE_EFFECT_DIR = `${CAPCUT_USER_DATA.replace(/\\/g, "/")}/Cache/effect/${GRADE_EFFECT_ID}/20cd8db6531c21bf7e4053026d20e395`;
 const grade: [string, number][] = (flag("grade") ?? "").split(",").filter(Boolean)
   .map((kv) => { const [k, v] = kv.split(":"); return [k.trim(), parseFloat(v)] as [string, number]; });
 const adjustMaterial = (type: string, value: number): Json => ({
@@ -781,7 +782,7 @@ out.tracks.push(newTrack("text", 1, textSegs));
 const titleClickTimes: number[] = []; // when each title line appears (gets a mouse click)
 if (titleSpans.length) {
   const presetName = flag("title-preset") ?? "Minhas predefinições5";
-  const presetDir = path.join(process.env.LOCALAPPDATA ?? "", "CapCut/User Data/Presets/Combination/Presets", presetName);
+  const presetDir = path.join(CAPCUT_USER_DATA, "Presets/Combination/Presets", presetName);
   const preset = readJson(path.join(presetDir, "preset_draft/draft_content.json"));
   const presetId = readJson(path.join(presetDir, `${presetName}.json`)).id;
   const presetIdx = indexMaterials(preset);
@@ -791,7 +792,7 @@ if (titleSpans.length) {
   // fonts; INK_TO_X turns px (at 200 px) × segment scale into CapCut x units (half the canvas width).
   const INK_TO_X = 0.000669;
   const MAX_HALF = 0.9; // keep the block inside the frame
-  const fontCache = path.join(process.env.LOCALAPPDATA ?? "", "CapCut/User Data/Cache/effect");
+  const fontCache = path.join(CAPCUT_USER_DATA, "Cache/effect");
   const findFont = (file: string): string => {
     if (fs.existsSync(file)) return file;
     // CapCut evicts cached fonts — look for the same file name elsewhere in its effect cache
@@ -913,10 +914,7 @@ function sfxGain(file: string, from: number, to: number): number {
   const key = `${file}|${from}|${to}`;
   let peak = peakCache.get(key);
   if (peak === undefined) {
-    const log = execSync(
-      `ffmpeg -hide_banner -ss ${from} -t ${Math.max(0.02, to - from)} -i "${file}" -af volumedetect -f null - 2>&1`,
-    ).toString();
-    peak = parseFloat(log.match(/max_volume:\s*(-?[\d.]+) dB/)?.[1] ?? "0");
+    peak = filePeakDb(file, from, Math.max(0.02, to - from));
     peakCache.set(key, peak);
   }
   return Math.min(10, Math.pow(10, (SFX_PEAK_DB - peak) / 20)); // linear gain, capped at CapCut's +20 dB

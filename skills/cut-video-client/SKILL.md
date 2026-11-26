@@ -25,6 +25,7 @@ Use this when the user hands over raw video footage and asks to roughcut, edit, 
 - **The Script Is Ground Truth Rule.** When a script is given, cuts must match its wording as closely as the on-camera speaker's actual takes allow. A wording deviation gets reported to the user, never silently smoothed over or hidden in a cut's `reason` field alone.
 - **The One Video At A Time Rule.** `temp/ai-cuts.json` is shared scratch space, not per-video state. Never start reviewing or building a new video before the previous one's build has finished, and always clear it before a new video's `analyze` step.
 - **The Confirm Before Building Rule.** No CapCut project gets written before the user has picked (or explicitly declined) a hook, and confirmed the client name / reel number if either was inferred rather than stated outright.
+- **The Client Profile Rule.** Caption font, size, spacing, colour, shadow and zoom come from `clients/<CLIENT>.json`, never from memory or another client. Profiles are local to each machine (the repo has only `clients/_TEMPLATE.json`): the first edit of a client on a machine means asking the user for the client's identity and filling the template (see `clients/README.md`). A missing font file means STOP and ask for it — never substitute another font.
 - **The Absolute Paths Rule.** Every path passed to a pipeline script is absolute, never relative — background tasks and the working directory can diverge.
 - **The Trello Match Confidence Rule.** (Whenever matching against Trello — the default.) A video's REEL number and client are never assigned from a weak or ambiguous text match against the Trello content queue. A clear leading match still gets a quick confirm from the user; anything ambiguous means STOP and ask, quoting both sides. See [reference/trello-match.md](reference/trello-match.md).
 
@@ -50,6 +51,7 @@ If something that was supposed to be verified turns out broken partway through (
 | 5 | Propose hook text overlay options | [reference/hooks.md](reference/hooks.md) |
 | 6 | Build the CapCut project and report back | [reference/build.md](reference/build.md) |
 | 7 | *(When asked to edit, not just roughcut)* Captions, eye-line zooms, J-cuts, flash + SFX on top of a rough project, styled from the client's finished project — no hook | [reference/full-edit.md](reference/full-edit.md) |
+| 7b | *(Edit asked, but no hand-finished project of this client on this machine)* Same edit rebuilt from the client profile `clients/<CLIENT>.json` — pre-flight checks the font, flash and SFX first | [reference/style-edit.md](reference/style-edit.md) |
 
 No need to read every reference at once. Load the one for the step currently running. Step 1 and step 1-fallback are alternatives, not sequential — pick per the rule above and use the other's naming-confirmation output the same way going forward.
 

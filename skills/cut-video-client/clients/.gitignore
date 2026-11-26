@@ -1,0 +1,3 @@
+# Client profiles are filled in on first use and stay on this machine only.
+*.json
+!_TEMPLATE.json

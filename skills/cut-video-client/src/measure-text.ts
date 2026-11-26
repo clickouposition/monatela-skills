@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { findFfmpeg } from "./ffmpeg.js";
 
 const SIZE = 200; // render size in px — widths are returned relative to this
 
@@ -23,7 +24,7 @@ export function inkMasks(items: PlacedText[], W: number, H: number): Buffer[] {
     const textFile = path.join(tmp, "t.txt");
     fs.writeFileSync(textFile, it.text, "utf-8");
     const esc = (p: string) => p.replace(/\\/g, "/").replace(/:/g, "\\:");
-    const raw = execFileSync("ffmpeg", [
+    const raw = execFileSync(findFfmpeg(true), [
       "-v", "error", "-f", "lavfi", "-i", `color=black:s=${W}x${H}:d=0.04`,
       "-vf", `drawtext=fontfile='${esc(it.font)}':textfile='${esc(textFile)}':expansion=none:fontsize=${Math.round(it.size)}:fontcolor=white:x=${Math.round(it.cx)}-text_w/2:y=${Math.round(it.cy)}-text_h/2`,
       "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1",
@@ -59,7 +60,7 @@ export function inkWidth(text: string, fontFile: string): number {
   fs.writeFileSync(textFile, text, "utf-8");
   const W = Math.max(400, text.length * SIZE), H = SIZE * 2;
   const esc = (p: string) => p.replace(/\\/g, "/").replace(/:/g, "\\:");
-  const raw = execFileSync("ffmpeg", [
+  const raw = execFileSync(findFfmpeg(true), [
     "-v", "error", "-f", "lavfi", "-i", `color=black:s=${W}x${H}:d=0.04`,
     // expansion=none: draw "%" literally (it starts a text expansion otherwise)
     "-vf", `drawtext=fontfile='${esc(fontFile)}':textfile='${esc(textFile)}':expansion=none:fontsize=${SIZE}:fontcolor=white:x=${SIZE / 2}:y=${SIZE / 2}`,
