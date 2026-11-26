@@ -561,6 +561,13 @@ async function runBuild(args: string[]) {
   }
 
   const sections = calculateSections(audibleParts, FPS, silenceResult.durationInSeconds, CONFIG, repeatRemovals);
+  // Padding/bridging can still run a section up to ~0.8 s past a cut start, leaking
+  // the director's next line into the clip. A cut always wins: clamp to it.
+  for (const sec of sections) {
+    const a = sec.startFrame / FPS, b = sec.endFrame / FPS;
+    const cut = repeatRemovals.find((r) => r.startSec > a + 0.2 && r.startSec < b - 0.05);
+    if (cut) { sec.endFrame = Math.floor(cut.startSec * FPS); sec.durationInFrames = sec.endFrame - sec.startFrame; }
+  }
   const totalKeptFrames = getTotalFrames(sections);
   const keptDuration = totalKeptFrames / FPS;
   const removedDuration = Math.max(0, silenceResult.durationInSeconds - keptDuration);
