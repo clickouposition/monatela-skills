@@ -35,7 +35,10 @@ export interface ClientProfile {
   };
   zoom: { punch: number; splitClipsLongerThanSec: number };
   flash: { file: string; count: "auto" };
-  sfx: { peakDb: number };
+  /** CapCut volume slider (dB) for every SFX clip. */
+  sfx: { volumeDb: number };
+  /** CapCut volume slider (dB) for the voice track. */
+  voice?: { volumeDb: number };
 }
 
 const SKILL_DIR = path.resolve(import.meta.dirname, "..");

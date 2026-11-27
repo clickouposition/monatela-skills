@@ -33,7 +33,9 @@ If the pre-flight fails, style-edit stops before writing anything. The usual cau
 | Captions | `wordsPerCaption` words at a time (the studio default is 1, word by word), in the profile's font, size, letter spacing, colour, shadow and case, at `captions.y`. Each caption lasts until the next word, at most 0.6 s past its own word. |
 | Zooms | Clips alternate 1.0 ↔ `zoom.punch`, anchored on the eye line. Clips longer than `splitClipsLongerThanSec` get an internal zoom cut at their widest word gap. |
 | Flash | `flash.file` is laid over the cut nearest ⅓ and ⅔ of the reel (½ when ≤ 40 s), starting 2 frames before the cut. Measured on a finished reel, the flash sits at 13.5 s and 29.0 s of 47 s: 4 white frames that then fade. |
-| SFX | Boom at 0, riser ending on each flash, "Transition 2" on the flash, a whoosh on the first two punch-ins, a click on every other punch-in, a pop on zoom-outs, and a pop-up near the last words. Every effect is levelled to peak at `sfx.peakDb`, never within 1 s of another accent, and spread over as many audio tracks as overlaps need. |
+| SFX | Boom at 0, riser ending on each flash, "Transition 2" on the flash, a whoosh on the first two punch-ins, a click on every other punch-in, a pop on zoom-outs, and a pop-up near the last words. Every effect gets CapCut volume `sfx.volumeDb` (−12 dB), never within 1 s of another accent, and spread over as many audio tracks as overlaps need. |
+| Pauses | Each clip is trimmed to 0.08 s before its first word and 0.15 s after its last, so no phrase ends in dead air. |
+| Voice | CapCut volume `voice.volumeDb` (−6 dB). |
 | J-cuts | The voice moves to its own audio track (the WAV from analyze, video muted). At every real cut (not at internal zoom cuts), the picture cuts 4 frames after the audio, so the next line's voice leads its picture. |
 | Not added | Hook text, music, slow push-in, colour grade and highlighted titles. Use full-edit for those, or the editor adds them. |
 

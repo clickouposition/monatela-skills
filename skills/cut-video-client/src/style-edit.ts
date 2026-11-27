@@ -9,8 +9,8 @@
  *     an internal zoom cut at the widest word gap
  *   - flash: the profile's flash clip over the cut nearest ⅓ and ⅔ (one at ½ if ≤ 40 s)
  *   - SFX: boom at the open, riser + "Transition 2" into each flash, whoosh/click on
- *     punch-ins, pop on zoom-outs, pop-up near the end; every effect peaks at the
- *     profile's level (−12 dBFS); never within 1 s of another accent
+ *     punch-ins, pop on zoom-outs, pop-up near the end; every effect at the
+ *     profile's CapCut volume (−12 dB), voice at −6 dB; never within 1 s of another accent
  * Every clip is first trimmed to temp/ai-cuts-<video>.json so the builder's padding
  * can't leak the director's next line.
  *
@@ -24,7 +24,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 const probeDurEarly = (f: string) => parseFloat(execSync(`"${findFfprobe(true)}" -v error -show_entries format=duration -of csv=p=0 "${f}"`).toString());
-import { CAPCUT_USER_DATA, findFfprobe, peakDb } from "./ffmpeg.js";
+import { CAPCUT_USER_DATA, findFfprobe } from "./ffmpeg.js";
 import { loadProfile, checkProfile, printCheck, resolveFont, resolveStudioPath, hexToRgb, STUDIO_DIR } from "./client-profile.js";
 import { SFX_FILES, type SfxKey } from "./style-edit-sfx.js";
 
@@ -61,7 +61,10 @@ const sh = { alpha: cap.shadow.opacity, blur: cap.shadow.blur, distance: cap.sha
 const CAPTION_Y = cap.y;
 const PUNCH = profile.zoom.punch;
 const EYE = { x: parseFloat(eyeXArg), y: parseFloat(eyeYArg) };
-const SFX_PEAK_DB = profile.sfx.peakDb;
+// CapCut volume slider values (dB): every SFX clip at sfx.volumeDb, the voice at voice.volumeDb
+const SFX_VOL = Math.pow(10, (profile.sfx.volumeDb ?? -12) / 20);
+const VOICE_VOL = Math.pow(10, (profile.voice?.volumeDb ?? -6) / 20);
+const HEAD_PAD = 0.08, TAIL_PAD = 0.15; // silence kept before the first / after the last word of a clip
 
 const MICRO = 1_000_000;
 const FRAME = MICRO / 30;
@@ -107,6 +110,14 @@ for (const s of videoTrack.segments) {
   const a = sec(s.source_timerange.start), b = a + sec(s.source_timerange.duration);
   const c = aiCuts.find((x) => x.startSec > a + 0.2 && x.startSec < b);
   if (c) s.source_timerange.duration = snap((c.startSec - a) * MICRO);
+  // trim dead air at the clip edges: rough sections carry up to ~1 s of silence after a phrase
+  const b2 = a + sec(s.source_timerange.duration);
+  const inClip = words.filter((w) => w.start >= a && w.start < b2 - 0.12); // last 0.12 s = next take's onset
+  if (inClip.length) {
+    const ns = Math.max(a, inClip[0].start - HEAD_PAD);
+    const ne = Math.min(b2, inClip.at(-1)!.end + TAIL_PAD);
+    s.source_timerange = { start: snap(ns * MICRO), duration: snap(ne * MICRO) - snap(ns * MICRO) };
+  }
   s.target_timerange = { start: cursor, duration: s.source_timerange.duration };
   cursor += s.source_timerange.duration;
 }
@@ -124,13 +135,17 @@ for (const s of videoTrack.segments) {
       if (g > gap) { gap = g; best = i; }
     }
     if (best >= 0) {
-      const cut = snap(((inner[best].end + inner[best + 1].start) / 2) * MICRO);
-      const firstDur = cut - s.source_timerange.start;
+      // the zoom cut hides a jump: drop the pause between the two words, keeping the edge pads
+      const tight = gap > HEAD_PAD + TAIL_PAD + 0.05;
+      const cut1 = snap((tight ? inner[best].end + TAIL_PAD : (inner[best].end + inner[best + 1].start) / 2) * MICRO);
+      const cut2 = tight ? snap((inner[best + 1].start - HEAD_PAD) * MICRO) : cut1;
+      const end = s.source_timerange.start + s.source_timerange.duration;
+      const firstDur = cut1 - s.source_timerange.start;
       const s2 = structuredClone(s);
       s2.id = uuid();
       s2.extra_material_refs = cloneRefs(s.extra_material_refs);
       s.source_timerange.duration = firstDur; s.target_timerange.duration = firstDur;
-      s2.source_timerange = { start: cut, duration: s2.source_timerange.duration - firstDur };
+      s2.source_timerange = { start: cut2, duration: end - cut2 };
       s2.target_timerange = { start: s.target_timerange.start + firstDur, duration: s2.source_timerange.duration };
       zoomSplit.add(s2.id);
       segs.push(s, s2);
@@ -140,6 +155,7 @@ for (const s of videoTrack.segments) {
   segs.push(s);
 }
 videoTrack.segments = segs;
+{ let t = 0; for (const x of segs) { x.target_timerange = { start: t, duration: x.source_timerange.duration }; t += x.source_timerange.duration; } }
 const totalUs = segs.reduce((m, s) => Math.max(m, s.target_timerange.start + s.target_timerange.duration), 0);
 d.duration = totalUs;
 
@@ -265,7 +281,7 @@ const audioSeg = (matId: string, src: { start: number; duration: number }, at: n
   template_id: "", template_scene: "default", track_attribute: 0, track_render_index: 0,
   uniform_scale: null, visible: true, volume, hdr_vivid_settings: null, segment_color_tag: "",
 });
-const voiceSegs = segs.map((s) => audioSeg(voiceMatId, s.source_timerange, s.target_timerange.start, 1));
+const voiceSegs = segs.map((s) => audioSeg(voiceMatId, s.source_timerange, s.target_timerange.start, VOICE_VOL));
 const srcVideoDurUs = d.materials.videos.find((v: Json) => v.id === segs[0].material_id)?.duration ?? Infinity;
 let jCuts = 0;
 for (let i = 1; i < segs.length; i++) {
@@ -337,8 +353,7 @@ for (const { key, at } of accents) {
   const file = path.join(SFX_DIR, SFX[key]);
   const fileDur = probeDur(file);
   const len = Math.min(fileDur, totalSec - at);
-  const peak = peakDb(file, 0, len);
-  const volume = Math.min(10, Math.pow(10, (SFX_PEAK_DB - peak) / 20));
+  const volume = SFX_VOL;
   const matId = uuid();
   d.materials.audios.push({
     app_id: 0, category_id: "", category_name: "local", check_flag: 1, copyright_limit_type: "none",

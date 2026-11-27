@@ -43,7 +43,8 @@ Fonts are searched, in this order, in:
 | `zoom.punch` | Punch-in scale on alternating clips, e.g. `1.18`. |
 | `zoom.splitClipsLongerThanSec` | Clips longer than this get an extra zoom cut at their widest word gap. |
 | `flash.file` | Transition clip laid over the cut nearest ⅓ and ⅔ (½ for reels ≤ 40 s). Relative paths resolve inside `<studio>`. |
-| `sfx.peakDb` | Every SFX is levelled to peak here. The editor mixes the voice at −6 dB and the music at −12 dB, so the default is −12. |
+| `sfx.volumeDb` | CapCut volume (dB) set on every SFX clip. Studio default −12. |
+| `voice.volumeDb` | CapCut volume (dB) on the voice track. Studio default −6. |
 
 ## First edit of a client on this machine
 

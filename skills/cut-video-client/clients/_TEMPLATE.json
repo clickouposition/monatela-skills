@@ -16,5 +16,6 @@
   },
   "zoom": { "punch": 1.18, "splitClipsLongerThanSec": 6 },
   "flash": { "file": "TRANSICTIONS/White.mov", "count": "auto" },
-  "sfx": { "peakDb": -12 }
+  "sfx": { "volumeDb": -12 },
+  "voice": { "volumeDb": -6 }
 }
