@@ -23,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
+const probeDurEarly = (f: string) => parseFloat(execSync(`"${findFfprobe(true)}" -v error -show_entries format=duration -of csv=p=0 "${f}"`).toString());
 import { CAPCUT_USER_DATA, findFfprobe, peakDb } from "./ffmpeg.js";
 import { loadProfile, checkProfile, printCheck, resolveFont, resolveStudioPath, hexToRgb, STUDIO_DIR } from "./client-profile.js";
 import { SFX_FILES, type SfxKey } from "./style-edit-sfx.js";
@@ -37,15 +38,22 @@ if (!roughName || !videoBase || eyeXArg === undefined || eyeYArg === undefined |
 }
 const profile = loadProfile(flag("client")!);
 console.log(`Pre-flight for ${profile.client}:`);
-if (!printCheck(checkProfile(profile, Object.values(SFX_FILES)))) {
-  console.error("\nFix the MISSING items above, then re-run. Nothing was written.");
+const checks = checkProfile(profile, Object.values(SFX_FILES));
+printCheck(checks);
+// --font-pending: build everything now, captions in CapCut's default font until the font file arrives
+const FONT_PENDING = args.includes("--font-pending");
+const blocking = checks.filter((c) => !c.ok && !(FONT_PENDING && c.what === "caption font"));
+if (blocking.length) {
+  console.error("\nFix the MISSING items above, then re-run (or --font-pending if only the font is missing). Nothing was written.");
   process.exit(1);
 }
+if (FONT_PENDING && !resolveFont(profile)) console.warn(`\n⚠ --font-pending: captions use CapCut's default font, not ${profile.captions.font}. Re-run once the font file is in FONTES.`);
 const DRAFTS = path.join(CAPCUT_USER_DATA, "Projects/com.lveditor.draft");
 const TEMP = path.resolve(import.meta.dirname, "..", "temp");
 const SFX_DIR = process.env.MONATELA_SFX_DIR ?? path.join(STUDIO_DIR, "SX");
 const FLASH_FILE = resolveStudioPath(profile.flash.file);
-const FONT = resolveFont(profile)!;
+const FONT = resolveFont(profile) ?? "";
+const J_CUT_US = 4 * (1_000_000 / 30); // next clip's voice leads its picture by 4 frames
 const cap = profile.captions;
 const SIZE = cap.size;
 const SPACING = cap.letterSpacing;
@@ -105,6 +113,7 @@ for (const s of videoTrack.segments) {
 
 // ─── zoom cuts: split long clips at the widest word gap ─────────────────
 const segs: Json[] = [];
+const zoomSplit = new Set<string>(); // ids of the second half of a split clip (zoom cut, not a real cut)
 for (const s of videoTrack.segments) {
   const a = sec(s.source_timerange.start), dur = sec(s.source_timerange.duration);
   if (dur > profile.zoom.splitClipsLongerThanSec) {
@@ -123,6 +132,7 @@ for (const s of videoTrack.segments) {
       s.source_timerange.duration = firstDur; s.target_timerange.duration = firstDur;
       s2.source_timerange = { start: cut, duration: s2.source_timerange.duration - firstDur };
       s2.target_timerange = { start: s.target_timerange.start + firstDur, duration: s2.source_timerange.duration };
+      zoomSplit.add(s2.id);
       segs.push(s, s2);
       continue;
     }
@@ -176,7 +186,7 @@ function textMaterial(text: string) {
     text,
     styles: [{
       fill: { content: { render_type: "solid", solid: { color: FILL } } },
-      font: { id: "", path: FONT },
+      font: FONT ? { id: "", path: FONT } : { id: "", path: "" },
       size: SIZE,
       range: [0, text.length],
       shadows: [{
@@ -189,7 +199,7 @@ function textMaterial(text: string) {
   return {
     ...(base ?? {}),
     id: uuid(), type: "text", content: JSON.stringify(content),
-    font_path: FONT, font_name: path.basename(FONT, path.extname(FONT)), font_size: SIZE,
+    font_path: FONT, font_name: FONT ? path.basename(FONT, path.extname(FONT)) : "", font_size: SIZE,
     letter_spacing: SPACING * 0.05, alignment: 1, line_max_width: 0.82,
     has_shadow: true, shadow_alpha: sh.alpha / 100, shadow_angle: sh.angle,
     shadow_distance: sh.distance, shadow_smoothing: sh.blur / 100, shadow_color: cap.shadow.color,
@@ -226,6 +236,50 @@ for (let i = 0; i + 1 < captionSegs.length; i++) {
     a.target_timerange.duration = Math.max(FRAME, b.target_timerange.start - a.target_timerange.start);
 }
 d.tracks.push({ attribute: 0, flag: 0, id: uuid(), is_default_name: true, name: "", segments: captionSegs, type: "text" });
+
+// ─── voice track + J-cuts ─────────────────────────────────────────────────
+// The voice moves to its own audio track at true timing (video muted); at every real cut
+// (not a zoom split) the picture cuts 4 frames after the audio, so the voice leads it.
+const wavPath = path.join(TEMP, `audio-normalized-${videoBase}.wav`);
+const wavDurUs = snap(probeDurEarly(wavPath) * MICRO);
+const voiceMatId = uuid();
+d.materials.audios.push({
+  app_id: 0, category_id: "", category_name: "local", check_flag: 1, copyright_limit_type: "none",
+  duration: wavDurUs, effect_id: "", formula_id: "", id: voiceMatId, intensifies_path: "",
+  is_ai_clone_tone: false, is_text_edit_overdub: false, is_ugc: false, local_material_id: uuid(),
+  music_id: uuid(), name: path.basename(wavPath), path: wavPath, query: "", request_id: "", resource_id: "",
+  search_id: "", source_from: "", source_platform: 0, team_id: "", text_id: "", tone_category_id: "",
+  tone_category_name: "", tone_effect_id: "", tone_effect_name: "", tone_platform: "",
+  tone_second_category_id: "", tone_second_category_name: "", tone_speaker: "", tone_type: "",
+  type: "extract_music", video_id: "", wave_points: [],
+});
+const audioSeg = (matId: string, src: { start: number; duration: number }, at: number, volume: number): Json => ({
+  caption_info: null, cartoon: false, clip: null, common_keyframes: [], desc: "", enable_adjust: false,
+  enable_color_curves: true, enable_color_wheels: true, enable_lut: false,
+  extra_material_refs: cloneRefs([segs[0].extra_material_refs[1], segs[0].extra_material_refs[2], segs[0].extra_material_refs[5], segs[0].extra_material_refs[8]]),
+  group_id: "", hdr_settings: null, id: uuid(), intensifies_audio: false, is_loop: false,
+  is_placeholder: false, is_tone_modify: false, keyframe_refs: [], last_nonzero_volume: 1,
+  material_id: matId, render_index: 0, reverse: false, source: "segmentsourcenormal",
+  source_timerange: { ...src }, speed: 1, state: 0,
+  target_timerange: { start: at, duration: src.duration },
+  template_id: "", template_scene: "default", track_attribute: 0, track_render_index: 0,
+  uniform_scale: null, visible: true, volume, hdr_vivid_settings: null, segment_color_tag: "",
+});
+const voiceSegs = segs.map((s) => audioSeg(voiceMatId, s.source_timerange, s.target_timerange.start, 1));
+const srcVideoDurUs = d.materials.videos.find((v: Json) => v.id === segs[0].material_id)?.duration ?? Infinity;
+let jCuts = 0;
+for (let i = 1; i < segs.length; i++) {
+  const prev = segs[i - 1], cur = segs[i];
+  if (zoomSplit.has(cur.id)) continue;
+  if (cur.source_timerange.duration <= J_CUT_US + 0.6 * MICRO) continue;
+  if (prev.source_timerange.start + prev.source_timerange.duration + J_CUT_US > srcVideoDurUs) continue;
+  prev.source_timerange.duration += J_CUT_US; prev.target_timerange.duration += J_CUT_US;
+  cur.source_timerange.start += J_CUT_US; cur.target_timerange.start += J_CUT_US;
+  cur.source_timerange.duration -= J_CUT_US; cur.target_timerange.duration -= J_CUT_US;
+  jCuts++;
+}
+for (const s of segs) s.volume = 0;
+d.tracks.push({ attribute: 0, flag: 0, id: uuid(), is_default_name: true, name: "", segments: voiceSegs, type: "audio" });
 
 // ─── flash transitions ───────────────────────────────────────────────────
 const cuts = segs.slice(1).map((s) => sec(s.target_timerange.start));
@@ -351,6 +405,7 @@ for (const f of ["draft_meta_info.json", "draft_virtual_store.json", "key_value.
 console.log(JSON.stringify({
   project: outName, durationSec: +totalSec.toFixed(2), clips: segs.length,
   zooms: segs.map((s) => s.clip.scale.x), captions: captionSegs.length,
+  jCuts, fontPending: !FONT,
   flashesAt: flashAt.map((x) => +x.toFixed(2)),
   sfx: accents.map((a) => `${a.key}@${a.at.toFixed(2)}`),
 }, null, 1));

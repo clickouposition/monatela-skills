@@ -23,7 +23,7 @@ npx tsx src/style-edit.ts "<rough-project>" <video-basename> <eyeX> <eyeY> --cli
 
 **First time for a client on this machine:** there's no `clients/<CLIENT>.json` yet, because profiles are local and never in the repo. Ask the user for the client's identity (caption font, size, letter spacing, colour, shadow opacity / blur / distance / angle, and words per caption). Then copy `clients/_TEMPLATE.json` to `clients/<CLIENT>.json`, fill it in, and run the pre-flight.
 
-If the pre-flight fails, style-edit stops before writing anything. The usual cause is the client font missing on this machine. Tell the user exactly which file to copy into `<studio>/FONTES`. **Never substitute another font**: the captions would silently render in the wrong typeface.
+If the pre-flight fails, style-edit stops before writing anything. The usual cause is the client font missing on this machine. Tell the user exactly which file to copy into `<studio>/FONTES`. **Never substitute another font**: the captions would silently render in the wrong typeface. If the user wants the edit now anyway, add `--font-pending`: everything is built and the captions use CapCut's default font. Tell the user, and re-run style-edit (it writes `-EDITADO-2`) once the font file is in `<studio>/FONTES`.
 
 ## What it does
 
@@ -34,7 +34,8 @@ If the pre-flight fails, style-edit stops before writing anything. The usual cau
 | Zooms | Clips alternate 1.0 ↔ `zoom.punch`, anchored on the eye line. Clips longer than `splitClipsLongerThanSec` get an internal zoom cut at their widest word gap. |
 | Flash | `flash.file` is laid over the cut nearest ⅓ and ⅔ of the reel (½ when ≤ 40 s), starting 2 frames before the cut. Measured on a finished reel, the flash sits at 13.5 s and 29.0 s of 47 s: 4 white frames that then fade. |
 | SFX | Boom at 0, riser ending on each flash, "Transition 2" on the flash, a whoosh on the first two punch-ins, a click on every other punch-in, a pop on zoom-outs, and a pop-up near the last words. Every effect is levelled to peak at `sfx.peakDb`, never within 1 s of another accent, and spread over as many audio tracks as overlaps need. |
-| Not added | Hook text, music, J-cuts, slow push-in, colour grade and highlighted titles. Use full-edit for those, or the editor adds them. |
+| J-cuts | The voice moves to its own audio track (the WAV from analyze, video muted). At every real cut (not at internal zoom cuts), the picture cuts 4 frames after the audio, so the next line's voice leads its picture. |
+| Not added | Hook text, music, slow push-in, colour grade and highlighted titles. Use full-edit for those, or the editor adds them. |
 
 ## Report back
 
