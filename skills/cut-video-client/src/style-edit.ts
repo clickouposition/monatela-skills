@@ -64,7 +64,8 @@ const EYE = { x: parseFloat(eyeXArg), y: parseFloat(eyeYArg) };
 // CapCut volume slider values (dB): every SFX clip at sfx.volumeDb, the voice at voice.volumeDb
 const SFX_VOL = Math.pow(10, (profile.sfx.volumeDb ?? -12) / 20);
 const VOICE_VOL = Math.pow(10, (profile.voice?.volumeDb ?? -6) / 20);
-const HEAD_PAD = 0.08, TAIL_PAD = 0.15; // silence kept before the first / after the last word of a clip
+const HEAD_PAD = 0.08, TAIL_PAD = 0.15; // upper bounds from the transcript; the waveform tightens them
+const ENERGY_HEAD = 0.04, ENERGY_TAIL = 0.07; // kept around the measured voice onset / offset
 
 const MICRO = 1_000_000;
 const FRAME = MICRO / 30;
@@ -99,6 +100,45 @@ function cloneRefs(refs: string[]): string[] {
   });
 }
 
+// ─── voice energy (10 ms RMS of the analyze WAV) — word timestamps can run 0.3–0.5 s past the
+// real end of speech, which leaves dead air before a cut and kills the J-cut's flow.
+const WAV = path.join(TEMP, `audio-normalized-${videoBase}.wav`);
+const env: number[] = (() => {
+  const b = fs.readFileSync(WAV);
+  let off = 12, rate = 48000, ch = 1, dataOff = -1, dataLen = 0;
+  while (off + 8 <= b.length) { // walk RIFF chunks
+    const id = b.toString("ascii", off, off + 4), len = b.readUInt32LE(off + 4);
+    if (id === "fmt ") { ch = b.readUInt16LE(off + 10); rate = b.readUInt32LE(off + 12); }
+    if (id === "data") { dataOff = off + 8; dataLen = Math.min(len, b.length - off - 8); break; }
+    off += 8 + len + (len & 1);
+  }
+  const hop = Math.round(rate * 0.01) * ch * 2, out: number[] = [];
+  for (let p = dataOff; p + hop <= dataOff + dataLen; p += hop) {
+    let sum = 0;
+    for (let q = p; q < p + hop; q += 2 * ch) { const v = b.readInt16LE(q) / 32768; sum += v * v; }
+    out.push(10 * Math.log10(sum / (hop / (2 * ch)) + 1e-12));
+  }
+  return out;
+})();
+const dbAt = (t: number) => env[Math.max(0, Math.min(env.length - 1, Math.round(t * 100)))];
+/** Speech level of the words in [a,b] (p80 of their frames) − 20 dB: Fran's tail decays below it, room tone stays under it. */
+function voiceThreshold(ws: { start: number; end: number }[]): number {
+  const v: number[] = [];
+  for (const w of ws) for (let t = w.start; t < w.end; t += 0.01) v.push(dbAt(t));
+  v.sort((x, y) => x - y);
+  return (v[Math.floor(v.length * 0.8)] ?? -30) - 20;
+}
+/** Last instant ≤ upTo where the voice is above thr (searching back to `floor`). */
+function voiceEnd(upTo: number, floor: number, thr: number): number {
+  for (let t = upTo; t > floor; t -= 0.01) if (dbAt(t) > thr && dbAt(t - 0.01) > thr) return t;
+  return floor;
+}
+/** First instant ≥ from where the voice is above thr (searching up to `ceil`). */
+function voiceStart(from: number, ceil: number, thr: number): number {
+  for (let t = from; t < ceil; t += 0.01) if (dbAt(t) > thr && dbAt(t + 0.01) > thr) return t;
+  return ceil;
+}
+
 // ─── respect the cut list: the rough builder's padding can run past a cut start
 // (leaking the director's next line) — trim each clip to the first cut inside it,
 // then close the gaps on the timeline.
@@ -114,8 +154,13 @@ for (const s of videoTrack.segments) {
   const b2 = a + sec(s.source_timerange.duration);
   const inClip = words.filter((w) => w.start >= a && w.start < b2 - 0.12); // last 0.12 s = next take's onset
   if (inClip.length) {
-    const ns = Math.max(a, inClip[0].start - HEAD_PAD);
-    const ne = Math.min(b2, inClip.at(-1)!.end + TAIL_PAD);
+    const thr = voiceThreshold(inClip);
+    const first = inClip[0], last = inClip.at(-1)!;
+    // never earlier than the transcript allows minus the pad, never later than the measured onset
+    const onset = voiceStart(Math.max(a, first.start - 0.15), Math.max(first.start + 0.1, first.end - 0.05), thr);
+    const offset = voiceEnd(Math.min(b2, last.end + 0.1), last.start + 0.08, thr);
+    const ns = Math.max(a, first.start - HEAD_PAD, onset - ENERGY_HEAD);
+    const ne = Math.min(b2, last.end + TAIL_PAD, offset + ENERGY_TAIL);
     s.source_timerange = { start: snap(ns * MICRO), duration: snap(ne * MICRO) - snap(ns * MICRO) };
   }
   s.target_timerange = { start: cursor, duration: s.source_timerange.duration };
@@ -136,9 +181,13 @@ for (const s of videoTrack.segments) {
     }
     if (best >= 0) {
       // the zoom cut hides a jump: drop the pause between the two words, keeping the edge pads
-      const tight = gap > HEAD_PAD + TAIL_PAD + 0.05;
-      const cut1 = snap((tight ? inner[best].end + TAIL_PAD : (inner[best].end + inner[best + 1].start) / 2) * MICRO);
-      const cut2 = tight ? snap((inner[best + 1].start - HEAD_PAD) * MICRO) : cut1;
+      const wl = inner[best], wr = inner[best + 1];
+      const thr = voiceThreshold(inner);
+      const endL = Math.min(wl.end + TAIL_PAD, voiceEnd(wl.end + 0.1, wl.start + 0.08, thr) + ENERGY_TAIL);
+      const startR = Math.max(wr.start - HEAD_PAD, voiceStart(wr.start - 0.15, Math.max(wr.start + 0.1, wr.end - 0.05), thr) - ENERGY_HEAD);
+      const tight = startR - endL > 0.05;
+      const cut1 = snap((tight ? endL : (wl.end + wr.start) / 2) * MICRO);
+      const cut2 = tight ? snap(startR * MICRO) : cut1;
       const end = s.source_timerange.start + s.source_timerange.duration;
       const firstDur = cut1 - s.source_timerange.start;
       const s2 = structuredClone(s);
@@ -295,6 +344,64 @@ for (let i = 1; i < segs.length; i++) {
   jCuts++;
 }
 for (const s of segs) s.volume = 0;
+
+// ─── slow push-in: the longest unzoomed clip of 3–7 s eases 1.0 → 1.07 on the eye line ─────
+const SLOW_TO = 1.07;
+let pushIdx = -1;
+segs.forEach((s, i) => {
+  const dur = sec(s.target_timerange.duration);
+  if (i > 0 && s.clip.scale.x === 1 && dur >= 3 && dur <= 7 && (pushIdx < 0 || dur > sec(segs[pushIdx].target_timerange.duration))) pushIdx = i;
+});
+if (pushIdx >= 0) {
+  const s = segs[pushIdx];
+  const t0 = s.source_timerange.start, t1 = t0 + s.source_timerange.duration; // CapCut keyframes run on source time
+  const ctl = Math.round((t1 - t0) * 0.3);
+  const vals: Record<string, [number, number]> = {
+    KFTypePositionX: [0, EYE.x * (1 - SLOW_TO)], KFTypePositionY: [0, EYE.y * (1 - SLOW_TO)],
+    KFTypeScaleX: [1, SLOW_TO], KFTypeRotation: [0, 0],
+  };
+  s.common_keyframes = Object.entries(vals).map(([prop, v]) => ({
+    id: uuid(), material_id: "", property_type: prop,
+    keyframe_list: [0, 1].map((j) => ({
+      id: uuid(), curveType: "Line", graphID: "", string_value: "",
+      time_offset: j === 0 ? t0 : t1,
+      left_control: { x: j === 0 ? 0 : -ctl, y: 0 }, right_control: { x: j === 0 ? ctl : 0, y: 0 },
+      values: [v[j]],
+    })),
+  }));
+}
+
+// ─── colour grade: --grade=temperature:0.12,brightness:0.14,… (slider ÷ 50) on every speaker clip.
+// The adjust effect is cloned from any draft where CapCut already applied one (it downloads the
+// effect the first time a basic adjustment is used).
+const grade: [string, number][] = (flag("grade") ?? "").split(",").filter(Boolean)
+  .map((kv) => { const [k, v] = kv.split(":"); return [k.trim(), parseFloat(v)] as [string, number]; });
+let gradeApplied = false;
+if (grade.length) {
+  const ADJ = new Set(["temperature", "tone", "brightness", "contrast", "saturation", "shadow", "white", "black", "light_sensation", "sharpen", "clear", "highlight", "fade", "vignetting"]);
+  let tmpl: Json = null;
+  for (const name of fs.readdirSync(DRAFTS)) {
+    const f = ["draft_info.json", "draft_content.json"].map((x) => path.join(DRAFTS, name, x)).find((x) => fs.existsSync(x));
+    if (!f) continue;
+    try {
+      const m = JSON.parse(fs.readFileSync(f, "utf8")).materials?.effects?.find((e: Json) => ADJ.has(e.type) && e.path && fs.existsSync(e.path));
+      if (m) { tmpl = m; break; }
+    } catch { /* partial draft */ }
+  }
+  if (!tmpl) console.warn("\n⚠ --grade skipped: CapCut hasn't downloaded its adjust effect on this machine yet. In CapCut, open any project, Ajustar → Básico, move any slider once, close CapCut and re-run.");
+  else {
+    d.materials.effects ??= [];
+    for (const s of segs) {
+      for (const [type, value] of grade) {
+        const m = { ...structuredClone(tmpl), id: uuid(), type, value };
+        d.materials.effects.push(m);
+        s.extra_material_refs.push(m.id);
+      }
+      s.enable_adjust = true;
+    }
+    gradeApplied = true;
+  }
+}
 d.tracks.push({ attribute: 0, flag: 0, id: uuid(), is_default_name: true, name: "", segments: voiceSegs, type: "audio" });
 
 // ─── flash transitions ───────────────────────────────────────────────────
@@ -331,8 +438,9 @@ const add = (key: SfxKey, at: number, force = false) => { if (at >= 0 && at < to
 add("boom", 0, true);
 for (const f of flashAt) {
   const riserDur = Math.min(probeDur(path.join(SFX_DIR, SFX.riser)), 2.5);
-  add("riser", Math.max(0, f - riserDur), true);
-  add("transition", f, true);
+  const white = Math.max(0, f - 2 / 30); // the flash clip starts 2 frames before the cut
+  add("riser", Math.max(0, white - riserDur), true);
+  add("transition", white, true);
 }
 let whooshes = 0, punchIdx = 0;
 segs.forEach((s, i) => {
@@ -346,6 +454,7 @@ segs.forEach((s, i) => {
 });
 const lastCaption = captionSegs.at(-4) ?? captionSegs.at(-1);
 if (lastCaption) add("popup", sec(lastCaption.target_timerange.start));
+if (pushIdx > 0) add("shortWhoosh", Math.max(0, sec(segs[pushIdx].target_timerange.start) - 0.25));
 accents.sort((a, b) => a.at - b.at);
 
 const audioSegs: Json[] = [];
@@ -420,7 +529,8 @@ for (const f of ["draft_meta_info.json", "draft_virtual_store.json", "key_value.
 console.log(JSON.stringify({
   project: outName, durationSec: +totalSec.toFixed(2), clips: segs.length,
   zooms: segs.map((s) => s.clip.scale.x), captions: captionSegs.length,
-  jCuts, fontPending: !FONT,
+  jCuts, fontPending: !FONT, grade: gradeApplied ? grade.map(([k, v]) => `${k}:${v}`).join(",") : "not applied",
+  slowPushInAt: pushIdx >= 0 ? +sec(segs[pushIdx].target_timerange.start).toFixed(2) : null,
   flashesAt: flashAt.map((x) => +x.toFixed(2)),
   sfx: accents.map((a) => `${a.key}@${a.at.toFixed(2)}`),
 }, null, 1));

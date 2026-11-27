@@ -7,5 +7,6 @@ export const SFX_FILES = {
   click: "ES_Computers, Keyboard & Mouse, Mouse, Apple Magic, Left Click, Various Single - Epidemic Sound.mp3",
   pop: "ES_Cartoon, Pop, Small Lid - Epidemic Sound.mp3",
   popup: "Pop up Sound effect ( 256kbps cbr ).mp3",
+  shortWhoosh: "ES_Swooshes, Whoosh, Short, Low, Dry 02 - Epidemic Sound.mp3",
 } as const;
 export type SfxKey = keyof typeof SFX_FILES;
