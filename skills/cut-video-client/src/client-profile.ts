@@ -34,7 +34,16 @@ export interface ClientProfile {
     shadow: { opacity: number; blur: number; distance: number; angle: number; color: string };
   };
   zoom: { punch: number; splitClipsLongerThanSec: number };
-  flash: { file: string; count: "auto" };
+  /** Transition clip over the cut nearest ⅓ and ⅔. Only `file` is required (white flash: whole clip, 2 frames before the cut). */
+  flash: {
+    file: string; count: "auto";
+    /** In-point inside the clip, s. */ srcStart?: number;
+    /** Length on the timeline, frames at 30 fps (default: rest of the clip). */ frames?: number;
+    /** Frames the clip starts before the cut (default 2). */ leadFrames?: number;
+    /** CapCut scale (a 16:9 clip needs > 3.16 to cover the 9:16 canvas). */ scale?: number;
+    /** Clip's own audio, linear (default 0 = muted). */ volume?: number;
+    /** CapCut track flag copied from the editor's project (default 0). */ trackFlag?: number;
+  };
   /** CapCut volume slider (dB) for every SFX clip. */
   sfx: { volumeDb: number };
   /** CapCut volume slider (dB) for the voice track. */

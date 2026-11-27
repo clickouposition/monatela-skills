@@ -97,10 +97,31 @@ export const CAPCUT_USER_DATA =
     : join(process.env.HOME ?? "", "Movies", "CapCut", "User Data");
 
 /** Peak level (dBFS) of a file window, computed from decoded PCM — works on minimal ffmpeg builds without volumedetect. */
-export function peakDb(file: string, from: number, dur: number): number {
-  const r = spawnSync(findFfmpeg(true), ["-v", "error", "-ss", String(from), "-t", String(dur), "-i", file, "-ac", "1", "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1"], { maxBuffer: 1 << 28 });
+/**
+ * Decode `dur` s of `file` from `from` to mono 16-bit PCM samples. Goes through WAV (not raw
+ * s16le) because Remotion's bundled ffmpeg has no s16le muxer.
+ */
+export function decodePcm(file: string, from: number, dur: number, rate = 48000): Int16Array {
+  const r = spawnSync(findFfmpeg(true), ["-v", "error", "-ss", String(from), "-t", String(dur), "-i", file,
+    "-vn", "-ac", "1", "-ar", String(rate), "-c:a", "pcm_s16le", "-f", "wav", "pipe:1"], { maxBuffer: 1 << 28 });
   const b = r.stdout as Buffer;
+  if (!b || b.length < 12) return new Int16Array(0);
+  let off = 12;
+  while (off + 8 <= b.length) { // walk RIFF chunks to "data"
+    const id = b.toString("ascii", off, off + 4);
+    const len = b.readUInt32LE(off + 4);
+    if (id === "data") {
+      const start = off + 8, n = Math.floor((b.length - start) / 2); // piped WAVs carry a bogus length
+      return new Int16Array(b.buffer.slice(b.byteOffset + start, b.byteOffset + start + n * 2));
+    }
+    off += 8 + len + (len & 1);
+  }
+  return new Int16Array(0);
+}
+
+export function peakDb(file: string, from: number, dur: number): number {
+  const pcm = decodePcm(file, from, dur);
   let max = 0;
-  for (let i = 0; i + 1 < b.length; i += 2) { const v = Math.abs(b.readInt16LE(i)); if (v > max) max = v; }
+  for (const v of pcm) { const a = Math.abs(v); if (a > max) max = a; }
   return max ? 20 * Math.log10(max / 32768) : -91;
 }

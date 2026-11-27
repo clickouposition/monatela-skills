@@ -24,7 +24,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
 const probeDurEarly = (f: string) => parseFloat(execSync(`"${findFfprobe(true)}" -v error -show_entries format=duration -of csv=p=0 "${f}"`).toString());
-import { CAPCUT_USER_DATA, findFfprobe } from "./ffmpeg.js";
+import { CAPCUT_USER_DATA, findFfprobe, decodePcm } from "./ffmpeg.js";
 import { loadProfile, checkProfile, printCheck, resolveFont, resolveStudioPath, hexToRgb, STUDIO_DIR } from "./client-profile.js";
 import { SFX_FILES, type SfxKey } from "./style-edit-sfx.js";
 import { autoGrade, type GradeReport } from "./auto-grade.js";
@@ -146,27 +146,42 @@ function voiceStart(from: number, ceil: number, thr: number): number {
 const perVideo = path.join(TEMP, `ai-cuts-${videoBase}.json`);
 const cutsFile = fs.existsSync(perVideo) ? perVideo : path.join(TEMP, "ai-cuts.json");
 const aiCuts: { startSec: number; endSec: number }[] = fs.existsSync(cutsFile) ? JSON.parse(fs.readFileSync(cutsFile, "utf8")) : [];
+const falseStarts: string[] = [];
 let cursor = 0;
-for (const s of videoTrack.segments) {
+const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+videoTrack.segments.forEach((s: Json, si: number) => {
   const a = sec(s.source_timerange.start), b = a + sec(s.source_timerange.duration);
   const c = aiCuts.find((x) => x.startSec > a + 0.2 && x.startSec < b);
   if (c) s.source_timerange.duration = snap((c.startSec - a) * MICRO);
   // trim dead air at the clip edges: rough sections carry up to ~1 s of silence after a phrase
   const b2 = a + sec(s.source_timerange.duration);
   const inClip = words.filter((w) => w.start >= a && w.start < b2 - 0.12); // last 0.12 s = next take's onset
+  // false start: the clip ends on the same word the next clip opens with, after a sentence end or a
+  // pause ("…carta de alta. Então" | "Então a carta…") — the editor cuts that word out
+  const next = videoTrack.segments[si + 1];
+  if (next && inClip.length > 1) {
+    const na = sec(next.source_timerange.start);
+    const nextFirst = words.find((w) => w.start >= na - 0.05 && w.start < na + 1);
+    const last = inClip.at(-1)!, prev = inClip.at(-2)!;
+    if (nextFirst && norm(last.text) === norm(nextFirst.text) && (/[.!?]$/.test(prev.text) || last.start - prev.end > 0.15)) {
+      inClip.pop();
+      falseStarts.push(`${last.text}@${last.start.toFixed(2)}`);
+    }
+  }
   if (inClip.length) {
     const thr = voiceThreshold(inClip);
     const first = inClip[0], last = inClip.at(-1)!;
     // never earlier than the transcript allows minus the pad, never later than the measured onset
     const onset = voiceStart(Math.max(a, first.start - 0.15), Math.max(first.start + 0.1, first.end - 0.05), thr);
-    const offset = voiceEnd(Math.min(b2, last.end + 0.1), last.start + 0.08, thr);
+    const nextW = words.find((w) => w.start > last.start); // never run into a dropped word
+    const offset = voiceEnd(Math.min(b2, last.end + 0.1, nextW ? nextW.start : Infinity), last.start + 0.08, thr);
     const ns = Math.max(a, first.start - HEAD_PAD, onset - ENERGY_HEAD);
     const ne = Math.min(b2, last.end + TAIL_PAD, offset + ENERGY_TAIL);
     s.source_timerange = { start: snap(ns * MICRO), duration: snap(ne * MICRO) - snap(ns * MICRO) };
   }
   s.target_timerange = { start: cursor, duration: s.source_timerange.duration };
   cursor += s.source_timerange.duration;
-}
+});
 
 // ─── zoom cuts: split long clips at the widest word gap ─────────────────
 const segs: Json[] = [];
@@ -266,6 +281,8 @@ function textMaterial(text: string) {
     ...(base ?? {}),
     id: uuid(), type: "text", content: JSON.stringify(content),
     font_path: FONT, font_name: FONT ? path.basename(FONT, path.extname(FONT)) : "", font_size: SIZE,
+    font_title: FONT ? cap.font : "", font_id: "", font_resource_id: "", font_third_resource_id: "",
+    font_category_id: "", font_category_name: "", font_url: "", font_source_platform: 0, fonts: [],
     letter_spacing: SPACING * 0.05, alignment: 1, line_max_width: 0.82,
     has_shadow: true, shadow_alpha: sh.alpha / 100, shadow_angle: sh.angle,
     shadow_distance: sh.distance, shadow_smoothing: sh.blur / 100, shadow_color: cap.shadow.color,
@@ -443,64 +460,98 @@ if (grade.length) {
 }
 d.tracks.push({ attribute: 0, flag: 0, id: uuid(), is_default_name: true, name: "", segments: voiceSegs, type: "audio" });
 
-// ─── flash transitions ───────────────────────────────────────────────────
+// ─── transition clip (profile.flash) over the cut nearest ⅓ and ⅔ (½ when ≤ 40 s) ─────────
+// The studio's default is a white flash; a client can use any clip (e.g. a film burn) with its own
+// in-point, length, lead before the cut, scale (16:9 sources need to cover the 9:16 canvas) and volume.
 const cuts = segs.slice(1).map((s) => sec(s.target_timerange.start));
 const totalSec = sec(totalUs);
 const targets = totalSec <= 40 ? [totalSec / 2] : [totalSec / 3, (2 * totalSec) / 3];
 const flashAt = [...new Set(targets.map((t) => cuts.reduce((b, c) => (Math.abs(c - t) < Math.abs(b - t) ? c : b), cuts[0])))];
 const probeDur = (f: string) => parseFloat(execSync(`"${findFfprobe(true)}" -v error -show_entries format=duration -of csv=p=0 "${f}"`).toString());
-const flashDurUs = snap(probeDur(FLASH_FILE) * MICRO);
+const fl = profile.flash;
+const flashFileUs = snap(probeDur(FLASH_FILE) * MICRO);
+const [flashW, flashH] = execSync(`"${findFfprobe(true)}" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "${FLASH_FILE}"`).toString().trim().split(",").map(Number);
+const flashHasAudio = execSync(`"${findFfprobe(true)}" -v error -select_streams a -show_entries stream=index -of csv=p=0 "${FLASH_FILE}"`).toString().trim() !== "";
+const flashSrcUs = snap((fl.srcStart ?? 0) * MICRO);
+const flashDurUs = fl.frames ? fl.frames * FRAME : flashFileUs - flashSrcUs;
+const flashLeadUs = (fl.leadFrames ?? 2) * FRAME;
 const flashSegs: Json[] = [];
 for (const at of flashAt) {
   const matId = uuid();
   const vm = structuredClone(d.materials.videos[0]);
-  Object.assign(vm, { id: matId, path: FLASH_FILE, material_name: path.basename(FLASH_FILE), duration: flashDurUs, has_audio: false, local_material_id: uuid() });
-  vm.stable.time_range = { start: 0, duration: flashDurUs };
-  vm.video_algorithm.time_range = { start: 0, duration: flashDurUs };
+  Object.assign(vm, { id: matId, path: FLASH_FILE, material_name: path.basename(FLASH_FILE), duration: flashFileUs, has_audio: flashHasAudio, width: flashW, height: flashH, local_material_id: uuid() });
+  if (vm.stable) vm.stable.time_range = { start: 0, duration: flashFileUs };
+  if (vm.video_algorithm) vm.video_algorithm.time_range = { start: 0, duration: flashFileUs };
   d.materials.videos.push(vm);
   const seg = structuredClone(segs[0]);
-  Object.assign(seg, { id: uuid(), material_id: matId, extra_material_refs: cloneRefs(segs[0].extra_material_refs), render_index: 11000, volume: 0 });
-  seg.clip = { alpha: 1, flip: { horizontal: false, vertical: false }, rotation: 0, scale: { x: 1, y: 1 }, transform: { x: 0, y: 0 } };
+  Object.assign(seg, { id: uuid(), material_id: matId, extra_material_refs: cloneRefs(segs[0].extra_material_refs), render_index: 11000, volume: fl.volume ?? 0, common_keyframes: [] });
+  const k = fl.scale ?? 1;
+  seg.clip = { alpha: 1, flip: { horizontal: false, vertical: false }, rotation: 0, scale: { x: k, y: k }, transform: { x: 0, y: 0 } };
   seg.uniform_scale = { on: true, value: 1 };
-  seg.source_timerange = { start: 0, duration: flashDurUs };
-  seg.target_timerange = { start: Math.max(0, snap(at * MICRO) - FRAME * 2), duration: flashDurUs };
+  seg.source_timerange = { start: flashSrcUs, duration: flashDurUs };
+  seg.target_timerange = { start: Math.max(0, snap(at * MICRO) - flashLeadUs), duration: flashDurUs };
   flashSegs.push(seg);
 }
-d.tracks.push({ attribute: 0, flag: 0, id: uuid(), is_default_name: true, name: "", segments: flashSegs, type: "video" });
+d.tracks.push({ attribute: 0, flag: fl.trackFlag ?? 0, id: uuid(), is_default_name: true, name: "", segments: flashSegs, type: "video" });
 
-// ─── SFX ─────────────────────────────────────────────────────────────────
+// ─── SFX: each effect's STRIKE (its loudest instant) lands on its target ──────────────────
+// Files have lead-in silence/swells (whoosh peaks at 0.86 s, Transition 2 at 0.59 s, the pop-up
+// at 1.99 s), so placing the file start on the cut sounds late. Each file is measured once: the
+// lead-in before its onset and the tail after it decays are trimmed ("edges cut"), then it is
+// slid so the peak hits the cut. Pattern (editor's REEL-01 pass): boom at 0, whoosh on the first two
+// punch-ins, pop on every other zoom-out (max 2), one riser into the first transition, Transition 2
+// on every transition, pop-up on the call-to-action. No clicks.
 const SFX = SFX_FILES;
-const accents: { key: SfxKey; at: number }[] = [];
-const free = (t: number, gap = 1) => accents.every((a) => Math.abs(a.at - t) >= gap);
-const add = (key: SfxKey, at: number, force = false) => { if (at >= 0 && at < totalSec && (force || free(at))) accents.push({ key, at }); };
+const envCache = new Map<string, { peak: number; onset: number; end: number; dur: number }>();
+function sfxEnvelope(key: SfxKey) {
+  if (envCache.has(key)) return envCache.get(key)!;
+  const file = path.join(SFX_DIR, SFX[key]);
+  const dur = probeDur(file);
+  const pcm = decodePcm(file, 0, Math.min(dur, 15), 8000);
+  const fr: number[] = [];
+  for (let p = 0; p + 80 <= pcm.length; p += 80) { let e = 0; for (let i = 0; i < 80; i++) { const v = pcm[p + i] / 32768; e += v * v; } fr.push(10 * Math.log10(e / 80 + 1e-12)); }
+  const mx = Math.max(...fr), peakI = fr.indexOf(mx);
+  const onsetI = Math.max(0, fr.findIndex((x) => x > mx - 30));
+  let endI = fr.length - 1; while (endI > peakI && fr[endI] < mx - 45) endI--;
+  const env = { peak: peakI * 0.01, onset: Math.max(0, onsetI * 0.01 - 0.02), end: Math.min(dur, endI * 0.01 + 0.08), dur };
+  envCache.set(key, env);
+  return env;
+}
+const accents: { key: SfxKey; hit: number }[] = [];
+const free = (t: number, gap = 1) => accents.every((a) => Math.abs(a.hit - t) >= gap);
+const add = (key: SfxKey, hit: number, force = false) => { if (hit >= 0 && hit < totalSec && (force || free(hit))) accents.push({ key, hit }); };
 
 add("boom", 0, true);
-for (const f of flashAt) {
-  const riserDur = Math.min(probeDur(path.join(SFX_DIR, SFX.riser)), 2.5);
-  const white = Math.max(0, f - 2 / 30); // the flash clip starts 2 frames before the cut
-  add("riser", Math.max(0, white - riserDur), true);
-  add("transition", white, true);
-}
-let whooshes = 0, punchIdx = 0;
+flashAt.forEach((f, n) => {
+  if (n === 0) add("riser", f, true);
+  add("transition", f, true);
+});
+let whooshes = 0, zoomOuts = 0, pops = 0;
 segs.forEach((s, i) => {
   if (i === 0) return;
   const at = sec(s.target_timerange.start);
   if (flashAt.includes(at)) return;
-  if (i % 2 === 1) { // punch-in
-    if (whooshes < 2 && free(at)) { add("whoosh", Math.max(0, at - 0.15)); whooshes++; }
-    else if (punchIdx++ % 2 === 0) add("click", at);
-  } else add("pop", at);
+  if (i % 2 === 1) { if (whooshes < 2 && free(at)) { add("whoosh", at); whooshes++; } }
+  else if (zoomOuts++ % 2 === 0 && pops < 2 && free(at)) { add("pop", at); pops++; }
 });
 const lastCaption = captionSegs.at(-4) ?? captionSegs.at(-1);
 if (lastCaption) add("popup", sec(lastCaption.target_timerange.start));
-if (pushIdx > 0) add("shortWhoosh", Math.max(0, sec(segs[pushIdx].target_timerange.start) - 0.25));
-accents.sort((a, b) => a.at - b.at);
+if (pushIdx > 0) add("shortWhoosh", sec(segs[pushIdx].target_timerange.start));
+accents.sort((a, b) => a.hit - b.hit);
 
 const audioSegs: Json[] = [];
-for (const { key, at } of accents) {
+const sfxPlaced: string[] = [];
+for (const { key, hit } of accents) {
   const file = path.join(SFX_DIR, SFX[key]);
-  const fileDur = probeDur(file);
-  const len = Math.min(fileDur, totalSec - at);
+  const env = sfxEnvelope(key);
+  const fileDur = env.dur;
+  // boom opens the reel from its first sample; everything else strikes on its target
+  let srcStart = key === "boom" ? 0 : Math.min(env.onset, env.peak);
+  let at = key === "boom" ? 0 : hit - (env.peak - srcStart);
+  if (at < 0) { srcStart -= at; at = 0; }
+  const len = Math.min(env.end - srcStart, totalSec - at);
+  if (len <= 0.05) continue;
+  sfxPlaced.push(`${key}@${hit.toFixed(2)}`);
   const volume = SFX_VOL;
   const matId = uuid();
   d.materials.audios.push({
@@ -520,7 +571,7 @@ for (const { key, at } of accents) {
     group_id: "", hdr_settings: null, id: uuid(), intensifies_audio: false, is_loop: false,
     is_placeholder: false, is_tone_modify: false, keyframe_refs: [], last_nonzero_volume: 1,
     material_id: matId, render_index: 0, reverse: false, source: "segmentsourcenormal",
-    source_timerange: { start: 0, duration: snap(len * MICRO) }, speed: 1, state: 0,
+    source_timerange: { start: snap(srcStart * MICRO), duration: snap(len * MICRO) }, speed: 1, state: 0,
     target_timerange: { start: snap(at * MICRO), duration: snap(len * MICRO) },
     template_id: "", template_scene: "default", track_attribute: 0, track_render_index: 0,
     uniform_scale: null, visible: true, volume, hdr_vivid_settings: null, segment_color_tag: "",
@@ -573,5 +624,5 @@ console.log(JSON.stringify({
   colourMeasured: gradeReport && { neutralRGB: gradeReport.neutralRGB, skinHue: gradeReport.skinHue, skinSat: gradeReport.skinSat, skinLuma: gradeReport.skinLuma, p99: gradeReport.p99, clipPct: gradeReport.clipPct },
   slowPushInAt: pushIdx >= 0 ? +sec(segs[pushIdx].target_timerange.start).toFixed(2) : null,
   flashesAt: flashAt.map((x) => +x.toFixed(2)),
-  sfx: accents.map((a) => `${a.key}@${a.at.toFixed(2)}`),
+  sfx: sfxPlaced, falseStartsDropped: falseStarts,
 }, null, 1));

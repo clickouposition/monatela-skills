@@ -43,6 +43,8 @@ Fonts are searched, in this order, in:
 | `zoom.punch` | Punch-in scale on alternating clips, e.g. `1.18`. |
 | `zoom.splitClipsLongerThanSec` | Clips longer than this get an extra zoom cut at their widest word gap. |
 | `flash.file` | Transition clip laid over the cut nearest ⅓ and ⅔ (½ for reels ≤ 40 s). Relative paths resolve inside `<studio>`. |
+| `flash.srcStart`, `flash.frames`, `flash.leadFrames` | Optional. In-point inside the clip (s), its length on the timeline (frames at 30 fps), and how many frames it starts before the cut. Defaults: whole clip, 2 frames. |
+| `flash.scale`, `flash.volume`, `flash.trackFlag` | Optional. CapCut scale (a 16:9 clip needs > 3.16 to cover the 9:16 canvas), the clip's own audio (linear, default 0 = muted), and the track flag. Copy them from a project the editor fixed by hand. |
 | `sfx.volumeDb` | CapCut volume (dB) set on every SFX clip. Studio default −12. |
 | `voice.volumeDb` | CapCut volume (dB) on the voice track. Studio default −6. |
 
