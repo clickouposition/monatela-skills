@@ -27,6 +27,7 @@ const probeDurEarly = (f: string) => parseFloat(execSync(`"${findFfprobe(true)}"
 import { CAPCUT_USER_DATA, findFfprobe } from "./ffmpeg.js";
 import { loadProfile, checkProfile, printCheck, resolveFont, resolveStudioPath, hexToRgb, STUDIO_DIR } from "./client-profile.js";
 import { SFX_FILES, type SfxKey } from "./style-edit-sfx.js";
+import { autoGrade, type GradeReport } from "./auto-grade.js";
 
 type Json = any;
 const args = process.argv.slice(2);
@@ -374,8 +375,23 @@ if (pushIdx >= 0) {
 // ─── colour grade: --grade=temperature:0.12,brightness:0.14,… (slider ÷ 50) on every speaker clip.
 // The adjust effect is cloned from any draft where CapCut already applied one (it downloads the
 // effect the first time a basic adjustment is used).
-const grade: [string, number][] = (flag("grade") ?? "").split(",").filter(Boolean)
-  .map((kv) => { const [k, v] = kv.split(":"); return [k.trim(), parseFloat(v)] as [string, number]; });
+let gradeReport: GradeReport | null = null;
+let grade: [string, number][] = [];
+if (flag("grade") === "auto") {
+  // measured on the frames this edit actually uses: 12 instants spread over the kept clips
+  const spans = segs.map((s) => [sec(s.source_timerange.start), sec(s.source_timerange.duration)]);
+  const total = spans.reduce((a, [, dd]) => a + dd, 0);
+  const times = Array.from({ length: 12 }, (_, i) => {
+    let t = ((i + 0.5) / 12) * total;
+    for (const [st, dd] of spans) { if (t < dd) return st + t; t -= dd; }
+    return spans[0][0];
+  });
+  gradeReport = autoGrade(path.join(TEMP, `normalized-${videoBase}.mp4`), EYE.x, EYE.y, times);
+  grade = gradeReport.values;
+} else {
+  grade = (flag("grade") ?? "").split(",").filter(Boolean)
+    .map((kv) => { const [k, v] = kv.split(":"); return [k.trim(), parseFloat(v)] as [string, number]; });
+}
 let gradeApplied = false;
 if (grade.length) {
   const ADJ = new Set(["temperature", "tone", "brightness", "contrast", "saturation", "shadow", "white", "black", "light_sensation", "sharpen", "clear", "highlight", "fade", "vignetting"]);
@@ -552,7 +568,9 @@ for (const f of ["draft_meta_info.json", "draft_virtual_store.json", "key_value.
 console.log(JSON.stringify({
   project: outName, durationSec: +totalSec.toFixed(2), clips: segs.length,
   zooms: segs.map((s) => s.clip.scale.x), captions: captionSegs.length,
-  jCuts, fontPending: !FONT, grade: gradeApplied ? grade.map(([k, v]) => `${k}:${v}`).join(",") : "not applied",
+  jCuts, fontPending: !FONT, grade: gradeApplied ? grade.map(([k, v]) => `${k}:${v}`).join(",") || "none needed" : "not applied",
+  gradeSliders: gradeApplied ? Object.fromEntries(grade.map(([k, v]) => [k, Math.round(v * 50)])) : null,
+  colourMeasured: gradeReport && { neutralRGB: gradeReport.neutralRGB, skinHue: gradeReport.skinHue, skinSat: gradeReport.skinSat, skinLuma: gradeReport.skinLuma, p99: gradeReport.p99, clipPct: gradeReport.clipPct },
   slowPushInAt: pushIdx >= 0 ? +sec(segs[pushIdx].target_timerange.start).toFixed(2) : null,
   flashesAt: flashAt.map((x) => +x.toFixed(2)),
   sfx: accents.map((a) => `${a.key}@${a.at.toFixed(2)}`),
