@@ -388,6 +388,29 @@ if (grade.length) {
       if (m) { tmpl = m; break; }
     } catch { /* partial draft */ }
   }
+  if (!tmpl) {
+    // no draft uses an adjustment yet, but CapCut may already have the effect cached (it downloads it
+    // when Ajustar is opened) — build the material the way full-edit does
+    const GRADE_EFFECT_ID = "7501974767453474064";
+    const root = path.join(CAPCUT_USER_DATA, "Cache/effect", GRADE_EFFECT_ID);
+    const hash = fs.existsSync(root) ? fs.readdirSync(root).find((h) => !h.endsWith("_tmp") && fs.existsSync(path.join(root, h, "lumi_hub_path"))) : undefined;
+    if (hash) {
+      const dir = path.join(root, hash);
+      tmpl = {
+        id: "", effect_id: GRADE_EFFECT_ID, resource_id: GRADE_EFFECT_ID, third_resource_id: "", name: "", report_name: "",
+        type: "", sub_type: "none", path: dir, value: 0, visible: true, item_effect_type: 0,
+        category_id: "", category_name: "", category_key: "", sub_category_id: "", sub_category_name: "",
+        platform: "all", apply_target_type: 0, source_platform: 1, version: "v3", adjust_params: [], time_range: null,
+        formula_id: "", enable_skin_tone_correction: false, algorithm_artifact_path: "", intensity_key: "",
+        face_adjust_params: [], exclusion_group: [], panel_id: "", bloom_params: null, request_id: "",
+        color_match_info: { target_feature_path: "", source_feature_path: "", target_image_path: "" },
+        multi_language_current: "", lumi_hub_path: path.join(dir, "lumi_hub_path"), covering_relation_change: 0,
+        beauty_face_auto_preset_id: "", beauty_body_auto_preset_id: "",
+        beauty_face_auto_retouch_info: { face_id: [], beauty_face_auto_retouch_id: "" },
+        smart_color_mode: 0, is_from_intelligent_quality: false,
+      };
+    }
+  }
   if (!tmpl) console.warn("\n⚠ --grade skipped: CapCut hasn't downloaded its adjust effect on this machine yet. In CapCut, open any project, Ajustar → Básico, move any slider once, close CapCut and re-run.");
   else {
     d.materials.effects ??= [];
